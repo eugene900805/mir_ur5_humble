@@ -73,7 +73,6 @@ ros2 launch mir_navigation navigation.py use_sim_time:=true
 ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur5 launch_rviz:=true prefix:=ur_ use_fake_hardware:=true use_sim_time:=true
 ```
 
-```
 # Notes
 
 1. If you get an error with respect to Gazebo Classic: Cannot launch gzclient on a launch file - results in shared_ptr assertion error, 
