@@ -1,0 +1,360 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find mir_description)/urdf/include/common_properties.urdf.xacro" />
+  <xacro:include filename="$(find mir_description)/urdf/include/imu.gazebo.urdf.xacro" />
+  <xacro:include filename="$(find mir_description)/urdf/include/sick_s300.urdf.xacro" />
+  <xacro:include filename="$(find mir_description)/urdf/include/wheel.urdf.xacro" />
+  <xacro:include filename="$(find mir_description)/urdf/include/caster.urdf.xacro" />
+  <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
+
+  <xacro:property name="deg_to_rad" value="0.017453293" />
+
+  <!-- The inertia for the MiR platform is intentionally chosen to be smaller than
+       the bounding box and also shifted a bit to the back, because most of the mass
+       is in the lower center back (because of the batteries). -->
+  <xacro:property name="mir_base_inertial_x" value="-0.05" />
+  <xacro:property name="mir_base_inertial_y" value="0.0" />
+  <xacro:property name="mir_base_inertial_z" value="0.15" />
+  <xacro:property name="mir_base_inertial_x_length" value="0.50" />
+  <xacro:property name="mir_base_inertial_y_length" value="0.30" />
+  <xacro:property name="mir_base_inertial_z_length" value="0.20" />
+
+  <xacro:property name="mir_100_act_wheel_radius" value="0.0625" />
+  <xacro:property name="mir_100_act_wheel_width" value="0.032" />
+  <xacro:property name="mir_100_act_wheel_mass" value="1.0" />
+  <xacro:property name="mir_100_act_wheel_dx" value="0.037646" />
+  <xacro:property name="mir_100_act_wheel_dy" value="0.222604" />
+
+  <xacro:property name="mir_100_caster_wheel_radius" value="${mir_100_act_wheel_radius}" />
+  <xacro:property name="mir_100_caster_wheel_width" value="${mir_100_act_wheel_width}" />
+  <xacro:property name="mir_100_caster_wheel_mass" value="${mir_100_act_wheel_mass}" />
+  <xacro:property name="mir_100_caster_wheel_dx" value="-0.0382" />
+  <xacro:property name="mir_100_caster_wheel_dy" value="0" />
+  <xacro:property name="mir_100_caster_wheel_dz" value="-0.094" />
+  <xacro:property name="mir_100_front_caster_wheel_base_dx" value="0.341346" />
+  <xacro:property name="mir_100_back_caster_wheel_base_dx" value="-0.270154" />
+  <xacro:property name="mir_100_caster_wheel_base_dy" value="0.203" />
+  <xacro:property name="mir_100_caster_wheel_base_dz" value="${mir_100_caster_wheel_radius-mir_100_caster_wheel_dz}" />
+
+  <!-- MiR 100 complete mass 78.2kg (8.2kg battery) -->
+  <!-- - 2x2kg sick laser = 4kg-->
+  <!-- - 4x caster wheels + rotation link: 4x 1.31 kg -->
+  <!-- - 2x act wheels: 2kg -->
+  <xacro:property name="mir_100_base_mass" value="66.96" />
+
+  <xacro:property name="imu_stdev" value="0.00017" />
+
+  <xacro:macro name="mir_100" params="prefix ns">
+    <link name="${prefix}base_footprint" />
+
+    <joint name="${prefix}base_joint" type="fixed">
+      <parent link="${prefix}base_footprint" />
+      <child link="${prefix}base_link" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+
+    <link name="${prefix}base_link">
+      <xacro:box_inertial mass="${mir_100_base_mass}" x="${mir_base_inertial_x_length}" y="${mir_base_inertial_y_length}" z="${mir_base_inertial_z_length}">
+        <origin xyz="${mir_base_inertial_x + mir_100_act_wheel_dx} ${mir_base_inertial_y} ${mir_base_inertial_z}" rpy="0 0 0" />
+      </xacro:box_inertial>
+      <visual>
+        <origin xyz="${mir_100_act_wheel_dx} 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://mir_description/meshes/visual/mir_100_base.stl" />
+        </geometry>
+        <xacro:insert_block name="material_white" />
+      </visual>
+      <collision>
+        <origin xyz="${mir_100_act_wheel_dx} 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://mir_description/meshes/collision/mir_100_base.stl" />
+        </geometry>
+      </collision>
+    </link>
+    <gazebo reference="${prefix}base_link">
+      <material>Gazebo/White</material>
+    </gazebo>
+
+    <!-- IMU -->
+    <joint name="${prefix}base_link_to_imu_joint" type="fixed">
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}imu_link" />
+      <origin xyz="0.0 0.0 0.25" rpy="0 0 0" />  <!-- same as real MiR -->
+    </joint>
+
+    <link name="${prefix}imu_link" />
+
+    <xacro:imu_gazebo link="${prefix}imu_link" imu_topic="${prefix}imu_data" update_rate="50.0" stdev="${imu_stdev}" />
+
+    <!-- Create an alias for imu_link. This is necessary because the real MiR's
+         TF has imu_link, but the imu_data topic is published in the imu_frame
+         frame. -->
+    <joint name="${prefix}imu_link_to_imu_frame_joint" type="fixed">
+      <parent link="${prefix}imu_link" />
+      <child link="${prefix}imu_frame" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+
+    <link name="${prefix}imu_frame" />
+
+    <!-- Laser scanners -->
+    <!-- virtual link for merged laserscan-->
+    <joint name="${prefix}base_link_to_virtual_laser_joint" type="fixed">
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}virtual_laser_link" />
+      <origin xyz="0.0 0.0 0.25" rpy="0.0 0.0 0" />
+    </joint>
+    <link name="${prefix}virtual_laser_link">
+    </link>
+
+    <joint name="${prefix}base_link_to_front_laser_joint" type="fixed">
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}front_laser_link" />
+      <origin xyz="0.4288 0.2358 0.1914" rpy="0.0 0.0 ${0.25 * pi}" />  <!-- from visually matching up the meshes of the MiR and the laser scanner -->
+    </joint>
+    <xacro:sick_s300 prefix="${prefix}" link="front_laser_link" topic="f_scan" />
+
+    <joint name="${prefix}base_link_to_back_laser_joint" type="fixed">
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}back_laser_link" />
+      <origin xyz="-0.3548 -0.2352 0.1914" rpy="0.0 0.0 ${-0.75 * pi}" />  <!-- from visually matching up the meshes of the MiR and the laser scanner -->
+    </joint>
+
+    <xacro:sick_s300 prefix="${prefix}" link="back_laser_link" topic="b_scan" />
+
+    <!-- Ultrasound sensors -->
+    <joint name="${prefix}us_1_joint" type="fixed">   <!-- right ultrasound -->
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}us_1_frame" />
+      <origin xyz="0.45 -0.12 0.16 " rpy="0 0 0" />  <!-- from visually matching to the mesh of the MiR -->
+    </joint>
+
+    <link name="${prefix}us_1_frame" />
+
+    <joint name="${prefix}us_2_joint" type="fixed">   <!-- left ultrasound -->
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}us_2_frame" />
+      <origin xyz="0.45 0.12 0.16 " rpy="0 0 0" />  <!-- from visually matching to the mesh of the MiR -->
+    </joint>
+
+    <link name="${prefix}us_2_frame" />
+
+    <!-- wheels -->
+    <xacro:actuated_wheel prefix="${prefix}" locationprefix="left" locationright="-1"/>
+    <xacro:actuated_wheel prefix="${prefix}" locationprefix="right" locationright="1"/>
+    <xacro:caster_wheel prefix="${prefix}" ns="${ns}" locationprefix="fl" locationright="-1" wheel_base_dx="${mir_100_front_caster_wheel_base_dx}"/>
+    <xacro:caster_wheel prefix="${prefix}" ns="${ns}" locationprefix="fr" locationright="1" wheel_base_dx="${mir_100_front_caster_wheel_base_dx}"/>
+    <xacro:caster_wheel prefix="${prefix}" ns="${ns}" locationprefix="bl" locationright="-1" wheel_base_dx="${mir_100_back_caster_wheel_base_dx}"/>
+    <xacro:caster_wheel prefix="${prefix}" ns="${ns}" locationprefix="br" locationright="1" wheel_base_dx="${mir_100_back_caster_wheel_base_dx}"/>
+
+    <joint name="${prefix}base_link_surface_joint" type="fixed">
+      <origin xyz="${mir_100_act_wheel_dx} 0 0.352" rpy="0 0 0" />
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}surface" />
+      <axis xyz="0 0 1" />
+    </joint>
+
+    <link name="${prefix}surface"/>
+
+    <joint name="${prefix}cabinet_joint" type="fixed">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}cabinet_link"/>
+      <origin xyz="0.037 0.0 0.58" rpy="0 0 0"/>
+    </joint>
+
+    <link name="${prefix}cabinet_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.76 0.44 0.44"/>
+        </geometry>
+        <material name="CabinetColor">
+          <color rgba="0.2 0.2 0.2 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.75 0.44 0.44"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="10.0"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <inertia ixx="0.1" ixy="0" ixz="0" iyy="0.1" iyz="0" izz="0.1"/>
+      </inertial>
+    </link>
+
+    <xacro:arg name="name" default="ur"/>
+    <!-- import main macro -->
+    <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+
+    <!-- possible 'ur_type' values: ur3, ur3e, ur5, ur5e, ur10, ur10e, ur16e, ur20 -->
+    <!-- the default value should raise an error in case this was called without defining the type -->
+    <xacro:arg name="ur_type" default="ur5"/>
+
+    <!-- parameters -->
+    <xacro:arg name="tf_prefix" default="ur_" />
+    <xacro:arg name="joint_limit_params" default="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"/>
+    <xacro:arg name="kinematics_params" default="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"/>
+    <xacro:arg name="physical_params" default="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"/>
+    <xacro:arg name="visual_params" default="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"/>
+    <xacro:arg name="transmission_hw_interface" default=""/>
+    <xacro:arg name="safety_limits" default="true"/> <!--false-->
+    <xacro:arg name="safety_pos_margin" default="0.15"/>
+    <xacro:arg name="safety_k_position" default="20"/>
+    <!-- ros2_control related parameters -->
+    <xacro:arg name="headless_mode" default="false" />
+    <xacro:arg name="robot_ip" default="192.168.12.245" />
+    <xacro:arg name="script_filename" default=""/>
+    <xacro:arg name="output_recipe_filename" default=""/>
+    <xacro:arg name="input_recipe_filename" default=""/>
+    <xacro:arg name="reverse_ip" default="0.0.0.0"/>
+    <xacro:arg name="script_command_port" default="50004"/>
+    <xacro:arg name="reverse_port" default="50001"/>
+    <xacro:arg name="script_sender_port" default="50002"/>
+    <xacro:arg name="trajectory_port" default="50003"/>
+    <!--   tool communication related parameters-->
+    <xacro:arg name="use_tool_communication" default="false" />
+    <xacro:arg name="tool_voltage" default="0" />
+    <xacro:arg name="tool_parity" default="0" />
+    <xacro:arg name="tool_baud_rate" default="115200" />
+    <xacro:arg name="tool_stop_bits" default="1" />
+    <xacro:arg name="tool_rx_idle_chars" default="1.5" />
+    <xacro:arg name="tool_tx_idle_chars" default="3.5" />
+    <xacro:arg name="tool_device_name" default="/tmp/ttyUR" />
+    <xacro:arg name="tool_tcp_port" default="54321" />
+
+      <!-- Simulation parameters -->
+    <xacro:arg name="use_fake_hardware" default="false" />
+    <xacro:arg name="fake_sensor_commands" default="false" />
+    <xacro:arg name="sim_gazebo" default="true" />
+    <xacro:arg name="sim_ignition" default="false" />
+    <xacro:arg name="simulation_controllers" default="" />
+
+    <!-- initial position for simulations (Fake Hardware, Gazebo, Ignition) -->
+    <xacro:arg name="initial_positions_file" default="$(find ur_description)/config/initial_positions.yaml"/>
+
+    <!-- convert to property to use substitution in function -->
+    <xacro:property name="initial_positions_file" default="$(arg initial_positions_file)"/>
+
+    <!-- create link fixed to the "world" -->
+    <link name="world" />
+    
+    <joint name="world_joint" type="fixed">
+      <parent link="${prefix}base_link" />
+      <child link="world" />
+      <origin xyz="0.135 0 0.79" rpy="0 0 ${0.5 * pi}" />
+    </joint>
+    
+    
+    <!-- arm -->
+    <xacro:ur_robot
+      name="$(arg name)"
+      tf_prefix="ur_"
+      parent="${prefix}cabinet_link"
+      joint_limits_parameters_file="$(arg joint_limit_params)"
+      kinematics_parameters_file="$(arg kinematics_params)"
+      physical_parameters_file="$(arg physical_params)"
+      visual_parameters_file="$(arg visual_params)"
+      transmission_hw_interface="$(arg transmission_hw_interface)"
+      safety_limits="$(arg safety_limits)"
+      safety_pos_margin="$(arg safety_pos_margin)"
+      safety_k_position="$(arg safety_k_position)"
+      use_fake_hardware="$(arg use_fake_hardware)"
+      fake_sensor_commands="$(arg fake_sensor_commands)"
+      sim_gazebo="$(arg sim_gazebo)"
+      sim_ignition="$(arg sim_ignition)"
+      headless_mode="$(arg headless_mode)"
+      initial_positions="${xacro.load_yaml(initial_positions_file)}"
+      use_tool_communication="$(arg use_tool_communication)"
+      tool_voltage="$(arg tool_voltage)"
+      tool_parity="$(arg tool_parity)"
+      tool_baud_rate="$(arg tool_baud_rate)"
+      tool_stop_bits="$(arg tool_stop_bits)"
+      tool_rx_idle_chars="$(arg tool_rx_idle_chars)"
+      tool_tx_idle_chars="$(arg tool_tx_idle_chars)"
+      tool_device_name="$(arg tool_device_name)"
+      tool_tcp_port="$(arg tool_tcp_port)"
+      robot_ip="$(arg robot_ip)"
+      script_filename="$(arg script_filename)"
+      output_recipe_filename="$(arg output_recipe_filename)"
+      input_recipe_filename="$(arg input_recipe_filename)"
+      reverse_ip="$(arg reverse_ip)"
+      script_command_port="$(arg script_command_port)"
+      reverse_port="$(arg reverse_port)"
+      script_sender_port="$(arg script_sender_port)"
+      trajectory_port="$(arg trajectory_port)"
+      >
+      <origin xyz="0.3 0.14 0.22" rpy="0 0 0" /> <!--${0.5 * pi}-->         <!-- position robot in the world -->
+    </xacro:ur_robot>
+
+    <xacro:if value="$(arg sim_gazebo)">
+      <!-- Gazebo plugins -->
+      <gazebo reference="world">
+      </gazebo>
+      <gazebo>
+        <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control_ur">
+          <!-- <parameters>$(arg simulation_controllers)</parameters> -->
+          <!-- <parameters>$(find mir_description)/config/diffdrive_controller.yaml</parameters> -->
+          <!-- <parameters>$(find ur_simulation_gazebo)/config/ur_controllers.yaml</parameters> -->
+          <!-- <parameters>$(find ur_simulation_gazebo)/config/ur_manipulator.yaml</parameters> -->
+          <!-- <parameters>$(find mir_description)/config/ur_manipulator.yaml</parameters> -->
+        </plugin>
+      </gazebo>
+    </xacro:if>
+
+    <xacro:if value="$(arg sim_ignition)">
+      <!-- Gazebo plugins -->
+      <gazebo reference="world">
+      </gazebo>
+      <gazebo>
+        <plugin filename="libign_ros2_control-system.so" name="ign_ros2_control::IgnitionROS2ControlPlugin">
+          <parameters>$(arg simulation_controllers)</parameters>
+          <controller_manager_node_name>$(arg tf_prefix)controller_manager</controller_manager_node_name>
+        </plugin>
+      </gazebo>
+    </xacro:if>
+
+    <link name="${prefix}camera_mount">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://mir_description/meshes/visual/D435i_mounted.STL" scale="0.001 0.001 0.001" />
+        </geometry>
+        <xacro:insert_block name="material_light_grey" />
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://mir_description/meshes/collision/D435i_mounted.STL" scale="0.001 0.001 0.001" />
+        </geometry>
+      </collision>
+    </link>    
+
+    <joint name="${prefix}camera_mount_joint" type="fixed">
+      <parent link="ur_flange" />
+      <child link="${prefix}camera_mount" />
+      <origin xyz="0.035 0.05 0.03" rpy="0 ${pi} ${0.5 * pi}" />
+    </joint> 
+
+    <xacro:sensor_d435i parent="ur_flange" name="realsense" use_nominal_extrinsics="true">
+      <origin xyz="0.02 0 -0.061" rpy="${pi} 0 0"/>
+    </xacro:sensor_d435i>
+
+    <xacro:arg name="use_fake_hardware" default="true" />
+  <xacro:arg name="com_port" default="/dev/ttyUSB0" />
+
+  <!-- Import gripper macros -->
+  <xacro:include filename="$(find mir_description)/urdf/include/robotiq_gripper_macro.xacro" />
+
+  <xacro:robotiq_gripper name="RobotiqGripperHardwareInterface" prefix="" parent="ur_tool0" use_fake_hardware="$(arg use_fake_hardware)" com_port="$(arg com_port)" sim_gazebo="$(arg sim_gazebo)">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+  </xacro:robotiq_gripper>
+
+    <!-- <xacro:mir_100_wheel_transmissions prefix="${prefix}"/>
+
+    <xacro:p3d_base_controller prefix="${prefix}"/> -->
+  </xacro:macro>
+</robot>
