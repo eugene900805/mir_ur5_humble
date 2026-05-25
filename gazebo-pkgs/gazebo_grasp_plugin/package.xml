@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>gazebo_grasp_plugin</name>
+  <version>1.0.2</version>
+  <description>
+        Gazebo Model plugin(s) which handle/help grasping in Gazebo.
+  </description>
+
+  <maintainer email="jennifer.e.buehler@gmail.com">Jennifer Buehler</maintainer>
+  <license>GPLv3</license>
+  <author email="jennifer.e.buehler@gmail.com">Jennifer Buehler</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>gazebo_ros</depend>
+  <depend>geometry_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>gazebo_version_helpers</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
