@@ -37,7 +37,5 @@
 
   <export>
     <build_type>ament_cmake</build_type>
-    <gazebo_ros gazebo_model_path="/home/eugene/ros2_ws/install/robotiq_description/share/"/>
-    <gazebo_ros gazebo_model_path="/home/eugene/ros2_ws/install/mir_description/share/"/>
   </export>
 </package>

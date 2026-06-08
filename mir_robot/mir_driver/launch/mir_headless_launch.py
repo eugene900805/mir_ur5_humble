@@ -56,6 +56,7 @@ def generate_launch_description():
             package='mir_driver',
             executable='mir_bridge',
             parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time'),
+                         'hostname': LaunchConfiguration('mir_hostname'),
                          'tf_prefix': LaunchConfiguration('namespace')}],
             namespace=LaunchConfiguration('namespace'),
             output='screen'),

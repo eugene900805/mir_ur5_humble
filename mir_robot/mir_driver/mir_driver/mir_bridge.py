@@ -2,6 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_system_default, qos_profile_sensor_data
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
 
 import time
 import copy
@@ -10,12 +11,24 @@ from collections.abc import Iterable
 
 import mir_driver.rosbridge
 from rclpy_message_converter import message_converter
-from geometry_msgs.msg import TwistStamped
-from nav_msgs.msg import Odometry
+from geometry_msgs.msg import TwistStamped, Pose, PoseWithCovarianceStamped
+from nav_msgs.msg import Odometry, OccupancyGrid, MapMetaData
 import sensor_msgs.msg
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import LaserScan, Imu
+from diagnostic_msgs.msg import DiagnosticArray
+from std_msgs.msg import String
+from mir_msgs.msg import RobotMode, RobotState
 from tf2_msgs.msg import TFMessage
 from std_srvs.srv import Trigger
+
+
+# latched (transient-local) QoS so late subscribers (rviz, nav2) still get the map
+qos_profile_latched = QoSProfile(
+    depth=1,
+    history=QoSHistoryPolicy.KEEP_LAST,
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+)
 
 
 tf_prefix = ''
@@ -59,10 +72,26 @@ def _laser_scan_filter(msg_dict, to_ros2):
     filtered_msg_dict = copy.deepcopy(msg_dict)
     filtered_msg_dict['header'] = _convert_ros_header(
         filtered_msg_dict['header'], to_ros2)
-    
+
     # Change the frame ID to "laser"
     #filtered_msg_dict['header']['frame_id'] = 'laser'
-    
+
+    return filtered_msg_dict
+
+
+def _header_dict_filter(msg_dict, to_ros2):
+    # Generic filter for any message with a top-level std_msgs/Header:
+    # converts the ROS1 (secs/nsecs/seq) <-> ROS2 (sec/nanosec) stamp.
+    filtered_msg_dict = copy.deepcopy(msg_dict)
+    filtered_msg_dict['header'] = _convert_ros_header(
+        filtered_msg_dict['header'], to_ros2)
+    return filtered_msg_dict
+
+
+def _map_metadata_dict_filter(msg_dict, to_ros2):
+    filtered_msg_dict = copy.deepcopy(msg_dict)
+    filtered_msg_dict['map_load_time'] = _convert_ros_time(
+        filtered_msg_dict['map_load_time'], to_ros2)
     return filtered_msg_dict
 
 
@@ -72,7 +101,6 @@ def _map_dict_filter(msg_dict, to_ros2):
         filtered_msg_dict['header'], to_ros2)
     filtered_msg_dict['info']['map_load_time'] = _convert_ros_time(
         filtered_msg_dict['info']['map_load_time'], to_ros2)
-    print('called dict filter')
     return filtered_msg_dict
 
 
@@ -196,7 +224,20 @@ PUB_TOPICS = [
     # TopicConfig('f_raw_scan', sensor_msgs.msg.LaserScan),
     TopicConfig('f_scan', LaserScan, dict_filter=_laser_scan_filter,
                 qos_profile=qos_profile_sensor_data),
-    # TopicConfig('imu_data', sensor_msgs.msg.Imu),
+    # --- topics restored for physical MiR parity with the noetic driver ---
+    TopicConfig('map', OccupancyGrid, topic_renamed='/map',
+                dict_filter=_map_dict_filter, qos_profile=qos_profile_latched),
+    TopicConfig('map_metadata', MapMetaData, topic_renamed='/map_metadata',
+                dict_filter=_map_metadata_dict_filter, qos_profile=qos_profile_latched),
+    TopicConfig('amcl_pose', PoseWithCovarianceStamped, dict_filter=_header_dict_filter),
+    TopicConfig('robot_pose', Pose),
+    TopicConfig('imu_data', Imu, dict_filter=_header_dict_filter,
+                qos_profile=qos_profile_sensor_data),
+    TopicConfig('diagnostics', DiagnosticArray, dict_filter=_header_dict_filter),
+    TopicConfig('robot_mode', RobotMode),
+    TopicConfig('robot_state', RobotState),
+    TopicConfig('mir_status_msg', String),
+    # ----------------------------------------------------------------------
     # TopicConfig('laser_back/driver/parameter_descriptions',
     #   dynamic_reconfigure.msg.ConfigDescription),
     # TopicConfig('laser_back/driver/parameter_updates', dynamic_reconfigure.msg.Config),
@@ -326,10 +367,10 @@ PUB_TOPICS = [
 
 # topics we want to subscribe to from ROS (and publish to the MiR)
 SUB_TOPICS = [
-    TopicConfig('cmd_vel', TwistStamped, 'cmd_vel_stamped')
-    # TopicConfig('initialpose', geometry_msgs.msg.PoseWithCovarianceStamped),
-    # TopicConfig('light_cmd', std_msgs.msg.String),
-    # TopicConfig('mir_cmd', std_msgs.msg.String),
+    TopicConfig('cmd_vel', TwistStamped, 'cmd_vel_stamped'),
+    TopicConfig('initialpose', PoseWithCovarianceStamped, dict_filter=_header_dict_filter),
+    TopicConfig('light_cmd', String),
+    TopicConfig('mir_cmd', String),
     # TopicConfig('move_base/cancel', actionlib_msgs.msg.GoalID),
     # really mir_actions/MirMoveBaseActionGoal:
     # TopicConfig('move_base/goal', move_base_msgs.msg.MoveBaseActionGoal,
