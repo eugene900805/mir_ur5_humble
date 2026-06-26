@@ -71,6 +71,25 @@ ros2 launch mir_navigation amcl.py use_sim_time:=true \
 ### navigation
 ros2 launch mir_navigation navigation.py use_sim_time:=true
 
+### set initial pose
+ros2 topic pub /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "header:
+  stamp:
+    sec: 0
+    nanosec: 0
+  frame_id: 'map'
+pose:
+  pose:
+    position:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+" --once
+
 ### MoveIt2:
 ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur5 launch_rviz:=true \
     prefix:=ur_ use_fake_hardware:=true use_sim_time:=true
