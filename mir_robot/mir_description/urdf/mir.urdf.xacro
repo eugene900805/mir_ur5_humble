@@ -28,9 +28,17 @@
     left_wheel_joint="${prefix}left_wheel_joint"
     right_wheel_joint="${prefix}right_wheel_joint"/>  -->
 
-  <ros2_control name="GazeboSystem" type="system">
+  <ros2_control name="MiRBaseSystem" type="system">
     <hardware>
-      <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+      <xacro:if value="$(arg sim_isaac)">
+        <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
+        <param name="joint_commands_topic">/isaac_base_commands</param>
+        <param name="joint_states_topic">$(arg isaac_joint_states)</param>
+        <param name="sum_wrapped_joint_states">true</param>
+      </xacro:if>
+      <xacro:unless value="$(arg sim_isaac)">
+        <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+      </xacro:unless>
     </hardware>
     <joint name="left_wheel_joint">
       <command_interface name="velocity">
@@ -48,46 +56,60 @@
       <state_interface name="position"/>
       <state_interface name="velocity"/>
     </joint>
-    <joint name="fl_caster_rotation_joint">
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="fr_caster_rotation_joint">
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="bl_caster_rotation_joint">
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="br_caster_rotation_joint">
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="fl_caster_wheel_joint">
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="fr_caster_wheel_joint">
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="bl_caster_wheel_joint">
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="br_caster_wheel_joint">
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
+    <!-- The passive casters are state-only joints. Under Isaac we must NOT list
+         them here: TopicBasedSystem then publishes /isaac_base_commands with
+         name=[10 joints] but velocity=[2 wheels] (a JointState whose name length
+         != value length), and Isaac's ROS2SubscribeJointState silently DROPS any
+         such inconsistent message -> the drive wheels never receive a command.
+         Dropping the casters from ros2_control makes the command message
+         name=2/velocity=2 (consistent), so it is delivered. The casters still
+         swivel/roll passively in Isaac; their joint state is just not fed back
+         through ros2_control (cosmetic, not used by nav/MoveIt). Gazebo keeps
+         them. -->
+    <xacro:unless value="$(arg sim_isaac)">
+      <joint name="fl_caster_rotation_joint">
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="fr_caster_rotation_joint">
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="bl_caster_rotation_joint">
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="br_caster_rotation_joint">
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="fl_caster_wheel_joint">
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="fr_caster_wheel_joint">
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="bl_caster_wheel_joint">
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="br_caster_wheel_joint">
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+    </xacro:unless>
   </ros2_control>
 
-  <gazebo>
-    <!-- Joint state publisher -->
-    <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
-      <parameters>$(find mir_description)/config/diffdrive_controller.yaml</parameters>
-    </plugin>
-  </gazebo>
+  <xacro:unless value="$(arg sim_isaac)">
+    <gazebo>
+      <!-- Joint state publisher -->
+      <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+        <parameters>$(find mir_description)/config/diffdrive_controller.yaml</parameters>
+      </plugin>
+    </gazebo>
+  </xacro:unless>
 
 
 </robot>

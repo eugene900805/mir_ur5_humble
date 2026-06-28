@@ -1,5 +1,18 @@
 # mir100+ur5+d435i+robotiq85
 
+![MiR100 + UR5 + Robotiq85 in NVIDIA Isaac Sim](Isaac_Sim_Mir_Ur5.png)
+
+> **Isaac Sim back-end available.** This robot can be simulated in NVIDIA
+> Isaac Sim 5.0 (instead of Gazebo) while keeping the same ros2_control + MoveIt2
+> stack. See **[`isaac_sim/README_isaac.md`](isaac_sim/README_isaac.md)**.
+> Quick start:
+> ```
+> # terminal 1 (Isaac Sim):
+> /mnt/data/IsaacSim/_build/linux-x86_64/release/python.sh isaac_sim/mir_isaac_sim.py
+> # terminal 2 (ROS control + MoveIt):
+> ros2 launch mir_description mir_isaac.launch.py
+> ```
+
 # Installation
 
 ## Preliminaries
@@ -94,6 +107,83 @@ pose:
 ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur5 launch_rviz:=true \
     prefix:=ur_ use_fake_hardware:=true use_sim_time:=true
 ```
+
+# Isaac Sim demo (Navigation with existing map)
+
+> Isaac Sim 5.0 replaces Gazebo as the physics/sensor back-end; the ROS 2
+> control + Nav2 + MoveIt stack is identical. Full details in
+> [`isaac_sim/README_isaac.md`](isaac_sim/README_isaac.md).
+
+Run each block in its own terminal; every ROS terminal needs
+`cd <workspace> && source install/setup.bash` first. **Start Isaac FIRST** — it
+is the `/clock` source, so restarting it resets sim time and crashes the live
+ROS stack / RViz.
+
+```
+### Terminal 1 — Isaac Sim (two SICK S300 lasers + ground-truth odom), then press Play
+python src/mir_robot/isaac_sim/mir_isaac_sim.py --lasers --publish-odom \
+    --world src/mir_robot/isaac_sim/usd/maze.usd --top-down
+#   must run with Isaac's python; e.g. from the Isaac build dir:
+#   <IsaacSim>/_build/linux-x86_64/release/python.sh <abs path>/mir_isaac_sim.py --lasers ...
+#   add --headless to run without a GUI (PhysX lidar works headless)
+
+### Terminal 2 — robot_state_publisher + ros2_control + MoveIt + RViz + scan merger (all-in-one)
+ros2 launch mir_description mir_isaac.launch.py
+#   one launch gives the whole TF tree, merges /f_scan + /b_scan -> /scan, opens RViz.
+#   drop pieces with: launch_moveit:=false  launch_rviz:=false  launch_scan_merger:=false
+
+### Terminal 3 — localization (existing map)
+ros2 launch mir_navigation amcl.py use_sim_time:=true \
+    map:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/maps/maze.yaml
+    
+### Terminal 4 — navigation
+ros2 launch mir_navigation navigation.py use_sim_time:=true \
+    cmd_vel_w_prefix:=/diff_cont/cmd_vel_unstamped
+```
+
+For SLAM instead of a saved map, replace Terminal 3 with:
+```
+ros2 launch mir_navigation mapping.py use_sim_time:=true \
+    slam_params_file:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/config/mir_mapping_async_sim.yaml
+```
+
+In RViz: **2D Pose Estimate** to seed AMCL → **Nav2 Goal** to send a target.
+Health checks: `ros2 topic hz /scan` (~12 Hz), and
+`ros2 run tf2_ros tf2_echo odom base_footprint` (Isaac's `--publish-odom`
+provides this). Unlike Gazebo, Isaac publishes `/f_scan` + `/b_scan` separately,
+so the scan merger (bundled in Terminal 2) is required.
+
+> **Isaac vs Gazebo gotcha — `enable_odom_tf`:** they use *different* controller
+> param files. Gazebo's `diffdrive_controller.yaml` has `enable_odom_tf: true`
+> (it is the only odom→base_footprint source). Isaac uses
+> `diffdrive_controller_isaac.yaml` with `enable_odom_tf: false`, because the
+> Isaac bridge already broadcasts that TF via `--publish-odom`. `mir_isaac.launch.py`
+> picks the Isaac file automatically — do not point Gazebo at it or nav breaks.
+
+# Running on another machine (paths to change)
+
+This tree was set up with the workspace at `/mnt/data/mir_isaac` and Isaac Sim at
+`/mnt/data/IsaacSim`. On a different machine, adjust these machine-specific paths:
+
+| What | Hardcoded value | Where | Fix |
+|---|---|---|---|
+| Isaac Sim install | `/mnt/data/IsaacSim/_build/linux-x86_64/release/python.sh` | Terminal 1 / docs | point at *your* Isaac build's `python.sh` |
+| Workspace root | `/mnt/data/mir_isaac` | run commands | use your own ws (the install section above uses `~/ros2_ws`) |
+| `isaac_python` arg | `/home/shareduser/anaconda3/envs/env_isaaclab_opt/bin/python` | `mir_description/launch/mir_isaac.launch.py` (~line 98) | a python that has Isaac / `pxr`; override `isaac_python:=...` (only used when `launch_isaac:=true`) |
+| `isaac_script_dir` arg | `/mnt/data/mir_isaac/src/mir_robot/isaac_sim` | `mir_isaac.launch.py` (~line 102) | override `isaac_script_dir:=...` (only when `launch_isaac:=true`) |
+
+Other portability notes:
+- `mir_isaac_sim.py` is meant to be run directly; its `--usd` default is computed
+  relative to the script, so it is path-independent. The `/mnt/data/...` lines in
+  its header are example comments only.
+- Run the script with **Isaac's own python** (`python.sh`) or an env that can
+  import `omni.*` / `pxr`; plain system python cannot load the Isaac modules.
+- Isaac's shipped lidar-config dir may contain a symlink to a non-existent
+  `/home/shareduser/IsaacSim`; this only affects *custom RTX* lidar profiles —
+  the default PhysX `--lasers` path is unaffected.
+- After editing any `mir_description/config/*.yaml` or launch file, rebuild
+  (`colcon build --packages-select mir_description`) so the `install/` copy used
+  at runtime is refreshed (or edit the `install/` copy too).
 
 # Notes
 

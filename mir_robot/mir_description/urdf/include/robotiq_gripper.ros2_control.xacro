@@ -63,12 +63,28 @@
                 </state_interface>
                 <state_interface name="velocity"/>
             </joint>
-            <!-- When simulating we need to include the rest of the gripper joints -->
-            <xacro:if value="${sim_gazebo or use_fake_hardware or sim_isaac or sim_ignition}">
+            <!-- When simulating we need to include the rest of the gripper joints.
+                 NOTE: sim_isaac is deliberately EXCLUDED here. Under Isaac these
+                 mimic joints would be listed with NO command/state interface (see
+                 the inner <xacro:unless> below). topic_based_ros2_control 0.2.0
+                 mishandles such interface-less mimic joints and corrupts the heap
+                 in TopicBasedSystem (ros2_control_node aborts with
+                 "free(): invalid next size"), so no joint state is ever read.
+                 For Isaac we therefore emit ONLY the master knuckle joint above;
+                 PhysX couples the mimic joints and robot_state_publisher still
+                 visualizes them via the URDF <mimic> tags from the master joint. -->
+            <xacro:if value="${sim_gazebo or use_fake_hardware or sim_ignition}">
                 <joint name="${prefix}robotiq_85_right_knuckle_joint">
                     <param name="mimic">${prefix}robotiq_85_left_knuckle_joint</param>
                     <param name="multiplier">-1</param>
-                    <xacro:unless value="${sim_ignition}">
+                    <!-- Isaac couples the mimic joints in PhysX (like Ignition),
+                         so it must NOT also command them: a command interface here
+                         makes TopicBasedSystem publish all 6 joints, and the
+                         bridge's ArticulationController then fights the PhysX mimic
+                         (fingers splay). Exclude command/state for sim_isaac too;
+                         robot_state_publisher still visualizes them via the URDF
+                         <mimic> tags from the master joint. -->
+                    <xacro:unless value="${sim_ignition or sim_isaac}">
                         <command_interface name="position"/>
                         <state_interface name="position"/>
                         <state_interface name="velocity"/>
@@ -77,7 +93,14 @@
                 <joint name="${prefix}robotiq_85_left_inner_knuckle_joint">
                     <param name="mimic">${prefix}robotiq_85_left_knuckle_joint</param>
                     <param name="multiplier">1</param>
-                    <xacro:unless value="${sim_ignition}">
+                    <!-- Isaac couples the mimic joints in PhysX (like Ignition),
+                         so it must NOT also command them: a command interface here
+                         makes TopicBasedSystem publish all 6 joints, and the
+                         bridge's ArticulationController then fights the PhysX mimic
+                         (fingers splay). Exclude command/state for sim_isaac too;
+                         robot_state_publisher still visualizes them via the URDF
+                         <mimic> tags from the master joint. -->
+                    <xacro:unless value="${sim_ignition or sim_isaac}">
                         <command_interface name="position"/>
                         <state_interface name="position"/>
                         <state_interface name="velocity"/>
@@ -86,7 +109,14 @@
                 <joint name="${prefix}robotiq_85_right_inner_knuckle_joint">
                     <param name="mimic">${prefix}robotiq_85_left_knuckle_joint</param>
                     <param name="multiplier">-1</param>
-                    <xacro:unless value="${sim_ignition}">
+                    <!-- Isaac couples the mimic joints in PhysX (like Ignition),
+                         so it must NOT also command them: a command interface here
+                         makes TopicBasedSystem publish all 6 joints, and the
+                         bridge's ArticulationController then fights the PhysX mimic
+                         (fingers splay). Exclude command/state for sim_isaac too;
+                         robot_state_publisher still visualizes them via the URDF
+                         <mimic> tags from the master joint. -->
+                    <xacro:unless value="${sim_ignition or sim_isaac}">
                         <command_interface name="position"/>
                         <state_interface name="position"/>
                         <state_interface name="velocity"/>
@@ -95,7 +125,14 @@
                 <joint name="${prefix}robotiq_85_left_finger_tip_joint">
                     <param name="mimic">${prefix}robotiq_85_left_knuckle_joint</param>
                     <param name="multiplier">-1</param>
-                    <xacro:unless value="${sim_ignition}">
+                    <!-- Isaac couples the mimic joints in PhysX (like Ignition),
+                         so it must NOT also command them: a command interface here
+                         makes TopicBasedSystem publish all 6 joints, and the
+                         bridge's ArticulationController then fights the PhysX mimic
+                         (fingers splay). Exclude command/state for sim_isaac too;
+                         robot_state_publisher still visualizes them via the URDF
+                         <mimic> tags from the master joint. -->
+                    <xacro:unless value="${sim_ignition or sim_isaac}">
                         <command_interface name="position"/>
                         <state_interface name="position"/>
                         <state_interface name="velocity"/>
@@ -104,7 +141,14 @@
                 <joint name="${prefix}robotiq_85_right_finger_tip_joint">
                     <param name="mimic">${prefix}robotiq_85_left_knuckle_joint</param>
                     <param name="multiplier">1</param>
-                    <xacro:unless value="${sim_ignition}">
+                    <!-- Isaac couples the mimic joints in PhysX (like Ignition),
+                         so it must NOT also command them: a command interface here
+                         makes TopicBasedSystem publish all 6 joints, and the
+                         bridge's ArticulationController then fights the PhysX mimic
+                         (fingers splay). Exclude command/state for sim_isaac too;
+                         robot_state_publisher still visualizes them via the URDF
+                         <mimic> tags from the master joint. -->
+                    <xacro:unless value="${sim_ignition or sim_isaac}">
                         <command_interface name="position"/>
                         <state_interface name="position"/>
                         <state_interface name="velocity"/>
