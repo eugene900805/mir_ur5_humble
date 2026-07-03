@@ -849,7 +849,9 @@ hardware_interface::return_type URPositionHardwareInterface::write(const rclcpp:
       ur_driver_->writeTrajectoryControlMessage(urcl::control::TrajectoryControlMessage::TRAJECTORY_NOOP);
       check_passthrough_trajectory_controller();
     } else {
-      ur_driver_->writeKeepalive();
+      // Use the configured keep_alive_count tolerance here too — the no-arg
+      // overload hardcodes 1s, which WiFi outages between host and robot exceed.
+      ur_driver_->writeKeepalive(receive_timeout_);
     }
 
     if (!std::isnan(force_mode_task_frame_[0]) && !std::isnan(force_mode_selection_vector_[0]) &&

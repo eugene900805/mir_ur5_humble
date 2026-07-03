@@ -381,6 +381,7 @@ SUB_TOPICS = [
 class PublisherWrapper(object):
     def __init__(self, topic_config, nh):
         self.topic_config = topic_config
+        self.nh = nh
         self.robot = nh.robot
         self.connected = False
         self.sub = nh.create_subscription(
@@ -417,6 +418,13 @@ class PublisherWrapper(object):
             msg_dict = self.topic_config.dict_filter(msg_dict, to_ros2=True)
         msg = message_converter.convert_dictionary_to_ros_message(
             self.topic_config.topic_type, msg_dict)
+        if self.nh.restamp_to_pc_time:
+            now = self.nh.get_clock().now().to_msg()
+            if isinstance(msg, TFMessage):
+                for transform in msg.transforms:
+                    transform.header.stamp = now
+            elif hasattr(msg, 'header'):
+                msg.header.stamp = now
         self.pub.publish(msg)
 
 
@@ -468,6 +476,14 @@ class MiR100BridgeNode(Node):
         tf_prefix = self.get_parameter('tf_prefix').get_parameter_value().string_value.strip('/')
         if tf_prefix != "":
             tf_prefix = tf_prefix + '/'
+
+        # The MiR's onboard clock cannot be trusted (its timezone is often
+        # misconfigured, leaving message stamps hours off from the PC). When
+        # this is set, re-stamp every header-bearing message with the PC clock
+        # on arrival so TF/AMCL see consistent times. Disable only if the robot
+        # clock is genuinely synced to this machine.
+        self.restamp_to_pc_time = self.declare_parameter(
+            'restamp_to_pc_time', True).value
 
         self.get_logger().info('Trying to connect to %s:%i...' % (hostname, port))
         self.robot = mir_driver.rosbridge.RosbridgeSetup(hostname, port)

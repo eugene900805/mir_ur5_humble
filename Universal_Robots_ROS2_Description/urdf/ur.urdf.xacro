@@ -30,6 +30,13 @@
    <xacro:arg name="reverse_port" default="50001"/>
    <xacro:arg name="script_sender_port" default="50002"/>
    <xacro:arg name="trajectory_port" default="50003"/>
+   <!-- reverse-interface watchdog = keep_alive_count * 20ms. Host reaches the
+        robot over WiFi with latency spikes >100ms; the upstream default of 2
+        (40ms) makes External Control drop within seconds. WiFi also goes
+        fully silent for a few hundred ms every ~15-60s (power save /
+        background scan). 100 → 2s. Requires the workspace ur_client_library
+        (MAX_RT_RECEIVE_TIMEOUT_MS raised), else clamped to 200ms. -->
+   <xacro:arg name="keep_alive_count" default="100"/>
    <!--   tool communication related parameters-->
    <xacro:arg name="use_tool_communication" default="false" />
    <xacro:arg name="tool_voltage" default="0" />
@@ -122,6 +129,7 @@
      reverse_port="$(arg reverse_port)"
      script_sender_port="$(arg script_sender_port)"
      trajectory_port="$(arg trajectory_port)"
+     keep_alive_count="$(arg keep_alive_count)"
      >
      <origin xyz="0 0 0" rpy="0 0 0" />          <!-- position robot in the world -->
    </xacro:ur_robot>

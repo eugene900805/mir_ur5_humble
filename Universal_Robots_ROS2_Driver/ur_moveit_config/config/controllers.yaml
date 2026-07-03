@@ -1,20 +1,37 @@
 controller_names:
+  - passthrough_trajectory_controller
   - scaled_joint_trajectory_controller
   - joint_trajectory_controller
   - gripper_position_controller
 
 
-scaled_joint_trajectory_controller:
+# Passthrough sends the whole trajectory to the robot controller, which
+# interpolates onboard — execution is immune to WiFi jitter (the streaming
+# scaled_joint_trajectory_controller stutters on our WiFi link).
+passthrough_trajectory_controller:
   action_ns: follow_joint_trajectory
   type: FollowJointTrajectory
   default: true
   joints:
-    - shoulder_pan_joint
-    - shoulder_lift_joint
-    - elbow_joint
-    - wrist_1_joint
-    - wrist_2_joint
-    - wrist_3_joint
+    - ur_shoulder_pan_joint
+    - ur_shoulder_lift_joint
+    - ur_elbow_joint
+    - ur_wrist_1_joint
+    - ur_wrist_2_joint
+    - ur_wrist_3_joint
+
+
+scaled_joint_trajectory_controller:
+  action_ns: follow_joint_trajectory
+  type: FollowJointTrajectory
+  default: false
+  joints:
+    - ur_shoulder_pan_joint
+    - ur_shoulder_lift_joint
+    - ur_elbow_joint
+    - ur_wrist_1_joint
+    - ur_wrist_2_joint
+    - ur_wrist_3_joint
 
 
 joint_trajectory_controller:

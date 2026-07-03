@@ -41,6 +41,8 @@ def generate_launch_description():
     log_level = LaunchConfiguration('log_level')
     default_nav_to_pose_bt_xml = LaunchConfiguration('default_nav_to_pose_bt_xml')
     default_nav_through_pose_bt_xml = LaunchConfiguration('default_nav_through_pose_bt_xml')
+    max_vel_x = LaunchConfiguration('max_vel_x')
+    max_vel_theta = LaunchConfiguration('max_vel_theta')
 
     lifecycle_nodes = ['controller_server',
                        'smoother_server',
@@ -66,7 +68,12 @@ def generate_launch_description():
         'use_sim_time': use_sim_time,
         'autostart': autostart,
         'default_nav_to_pose_bt_xml': default_nav_to_pose_bt_xml,
-        'default_nav_through_poses_bt_xml': default_nav_through_pose_bt_xml
+        'default_nav_through_poses_bt_xml': default_nav_through_pose_bt_xml,
+        # speed limits (defaults keep the yaml values; real-robot launch
+        # passes gentler ones). max_speed_xy follows max_vel_x.
+        'max_vel_x': max_vel_x,
+        'max_speed_xy': max_vel_x,
+        'max_vel_theta': max_vel_theta
     }
 
     configured_params = RewrittenYaml(
@@ -96,6 +103,14 @@ def generate_launch_description():
     declare_autostart_cmd = DeclareLaunchArgument(
         'autostart', default_value='true',
         description='Automatically startup the nav2 stack')
+
+    declare_max_vel_x_cmd = DeclareLaunchArgument(
+        'max_vel_x', default_value='0.8',
+        description='Max linear speed [m/s] (rewrites max_vel_x/max_speed_xy in params)')
+
+    declare_max_vel_theta_cmd = DeclareLaunchArgument(
+        'max_vel_theta', default_value='1.0',
+        description='Max angular speed [rad/s] (rewrites max_vel_theta in params)')
 
     declare_use_composition_cmd = DeclareLaunchArgument(
         'use_composition', default_value='False',
@@ -285,6 +300,8 @@ def generate_launch_description():
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_autostart_cmd)
+    ld.add_action(declare_max_vel_x_cmd)
+    ld.add_action(declare_max_vel_theta_cmd)
     ld.add_action(declare_use_composition_cmd)
     ld.add_action(declare_container_name_cmd)
     ld.add_action(declare_use_respawn_cmd)

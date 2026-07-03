@@ -11,7 +11,12 @@
 #   colcon build --packages-select ira_laser_tools
 #
 # Usage:
-#   ros2 launch mir_description mir_isaac_scan_merger.launch.py
+#   Isaac Sim:    ros2 launch mir_description mir_isaac_scan_merger.launch.py
+#   Real MiR:     ros2 launch mir_description mir_isaac_scan_merger.launch.py \
+#                     use_sim_time:=false best_effort:=true
+#   On the physical robot the mir_driver bridge publishes /f_scan and /b_scan
+#   with BEST_EFFORT (sensor_data) QoS, so the merger must subscribe BEST_EFFORT
+#   too or it silently receives nothing and /scan stays empty.
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -21,8 +26,10 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
+    best_effort = LaunchConfiguration("best_effort")
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="true"),
+        DeclareLaunchArgument("best_effort", default_value="false"),
         Node(
             package="ira_laser_tools",
             name="mir_laser_scan_merger",
@@ -49,7 +56,7 @@ def generate_launch_description():
                 "max_completion_time": 0.05,
                 "max_merge_time_diff": 0.005,
                 "use_sim_time": use_sim_time,
-                "best_effort": False,
+                "best_effort": best_effort,
             }],
             output="screen",
         ),

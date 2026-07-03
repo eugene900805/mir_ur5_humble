@@ -66,6 +66,7 @@ def launch_setup(context, *args, **kwargs):
     initial_joint_controller = LaunchConfiguration("initial_joint_controller")
     activate_joint_controller = LaunchConfiguration("activate_joint_controller")
     launch_rviz = LaunchConfiguration("launch_rviz")
+    launch_rsp = LaunchConfiguration("launch_rsp")
     headless_mode = LaunchConfiguration("headless_mode")
     launch_dashboard_client = LaunchConfiguration("launch_dashboard_client")
     use_tool_communication = LaunchConfiguration("use_tool_communication")
@@ -314,11 +315,17 @@ def launch_setup(context, *args, **kwargs):
         ],
     )
 
+    # In the integrated MiR+UR5 stack a single robot_state_publisher already
+    # publishes the full combined description (mir.urdf.xacro, arm mounted on
+    # cabinet_link). This UR-only RSP is rooted at "world" and would give
+    # ur_base_link a second parent, breaking the TF tree. Launch it only when
+    # running the arm standalone (launch_rsp:=true, the default).
     robot_state_publisher_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="both",
         parameters=[robot_description],
+        condition=IfCondition(launch_rsp),
     )
 
     rviz_node = Node(
@@ -547,6 +554,15 @@ def generate_launch_description():
     )
     declared_arguments.append(
         DeclareLaunchArgument("launch_rviz", default_value="true", description="Launch RViz?")
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "launch_rsp",
+            default_value="true",
+            description="Launch the UR robot_state_publisher? Set false in the "
+            "integrated MiR+UR5 stack where a combined RSP already publishes the "
+            "full TF tree (avoids ur_base_link getting two parents).",
+        )
     )
     declared_arguments.append(
         DeclareLaunchArgument(
