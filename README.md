@@ -160,6 +160,93 @@ so the scan merger (bundled in Terminal 2) is required.
 > Isaac bridge already broadcasts that TF via `--publish-odom`. `mir_isaac.launch.py`
 > picks the Isaac file automatically — do not point Gazebo at it or nav breaks.
 
+# Real robot demo (MiR100 + UR5 hardware)
+
+> Full debugging notes (WiFi keepalive, controller choice, shared localization,
+> all symptoms → root causes → fixes, in Chinese) are in
+> **[`claude_debug.md`](claude_debug.md)**.
+
+Device addresses depend on which WiFi the PC is on (UR5 control box is
+`192.168.0.101` on both):
+
+| WiFi network | MiR address | Note |
+|---|---|---|
+| `Aislab_mir3` (MiR's own hotspot) | `192.168.12.20` | the robot's DNS resolves `mir.com` to itself |
+| `TP-Link_550F_5G` (lab router) | `192.168.0.104` | MiR joins as a WiFi client |
+
+Don't guess — auto-detect (tries `mir.com`, known addresses, then scans the
+subnet for rosbridge port 9090):
+
+```
+ros2 launch mir_navigation mir_nav_launch.py mir_hostname:=$(./src/mir_robot/tools/find_mir.sh)
+```
+
+The PC's own IP never needs to be typed anywhere: the UR driver auto-detects
+its reverse-connection IP (headless mode) and the MiR bridge connects outward.
+After switching WiFi: restart the UR driver (its reverse IP was baked in at
+startup), restart the nav stack with the new `mir_hostname`, and disable WiFi
+power-save on the **new** connection profile
+(`nmcli connection modify "<SSID>" 802-11-wireless.powersave 2`, then
+down/up) — power-save causes the periodic outages that break External Control.
+
+Run each block in its own terminal; every terminal needs
+`cd <workspace> && source install/setup.bash` first (system python, **not** conda).
+
+```
+### Terminal 1 — UR5 driver (headless External Control, no teach pendant needed)
+ros2 launch ur_robot_driver ur_control.launch.py \
+    ur_type:=ur5 robot_ip:=192.168.0.101 tf_prefix:=ur_ \
+    launch_rviz:=false launch_rsp:=false headless_mode:=true \
+    initial_joint_controller:=passthrough_trajectory_controller \
+    activate_joint_controller:=true controller_spawner_timeout:=60
+
+### Terminal 2 — MoveIt (drag the goal ball in RViz -> Plan & Execute)
+ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur5 prefix:=ur_ launch_rviz:=true
+
+### Terminal 3 — MiR navigation (bridge + Nav2 + RViz, shares the robot's own
+###              localization/map with the MiR web UI -> no 2D Pose Estimate needed)
+ros2 launch mir_navigation mir_nav_launch.py mir_hostname:=192.168.0.104
+
+### Terminal 4 — laser scan merger (required; QoS flags matter on hardware)
+ros2 launch mir_description mir_isaac_scan_merger.launch.py use_sim_time:=false best_effort:=true
+```
+
+Then send **Nav2 Goal** in the navigation RViz to drive the base, and
+**Plan & Execute** in the MoveIt RViz to move the arm.
+
+Key points (details in `claude_debug.md`):
+
+- `launch_rsp:=false` — the MiR combined model already publishes the arm TF;
+  a second robot_state_publisher from the driver corrupts the TF tree.
+- `headless_mode:=true` — the driver injects the External Control URScript
+  itself; the pendant program (`test.urp`) is irrelevant and must NOT be
+  played. If the script stops, resend with
+  `ros2 service call /io_and_status_controller/resend_robot_program std_srvs/srv/Trigger`
+  (takes ~6 s). Occasional drops are caused by an **unstable router/WiFi** —
+  if your network is solid you can ignore this entirely. On a flaky link (e.g.
+  our 2.4 GHz `Aislab_mir3` hotspot drops every ~10-15 min even at the 5 s
+  watchdog maximum) keep `tools/ur_program_watchdog.sh` running in a 5th
+  terminal; it auto-resends within seconds.
+- `initial_joint_controller` selects the trajectory controller:
+  `passthrough_trajectory_controller` (whole trajectory interpolated on the
+  robot — smooth over WiFi, default) vs `scaled_joint_trajectory_controller`
+  (125 Hz streaming — stutters over WiFi). MoveIt follows whichever is active.
+- WiFi keepalive: workspace-vendored `ur_client_library` raises
+  `MAX_RT_RECEIVE_TIMEOUT_MS` 200 ms → 5000 ms and `keep_alive_count`
+  (xacro arg, default 250 = 5 s) sets the watchdog; WiFi power-save is
+  disabled on the AP connection. Without these the External Control
+  connection drops within seconds.
+- `use_mir_localization:=true` (default) — RViz always shows the same pose as
+  the MiR web UI (`mir_localization_tf` converts `/robot_pose` into the
+  map→odom TF); no local AMCL/map_server. Old behavior:
+  `use_mir_localization:=false map:=maze.yaml`.
+- Speed limits are launch args: real-robot defaults `max_vel_x:=0.3`,
+  `max_vel_theta:=0.5` (params-file originals: 0.8 m/s, 1.0 rad/s). Override:
+  `max_vel_x:=0.5 max_vel_theta:=0.8`.
+- Before relaunching, kill leftovers or duplicate action servers break Nav2
+  (`unknown goal response`):
+  `pkill -f mir_nav_launch.py; pkill -f mir_launch.py; pkill -f twist_stamper; pkill -f teleop_twist_keyboard; pkill xterm`
+
 # Running on another machine (paths to change)
 
 This tree was set up with the workspace at `/mnt/data/mir_isaac` and Isaac Sim at

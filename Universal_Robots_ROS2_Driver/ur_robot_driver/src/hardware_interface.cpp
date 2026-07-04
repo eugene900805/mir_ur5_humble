@@ -843,10 +843,14 @@ hardware_interface::return_type URPositionHardwareInterface::write(const rclcpp:
       ur_driver_->writeJointCommand(urcl_velocity_commands_, urcl::comm::ControlMode::MODE_SPEEDJ, receive_timeout_);
 
     } else if (freedrive_mode_controller_running_ && freedrive_activated_) {
-      ur_driver_->writeFreedriveControlMessage(urcl::control::FreedriveControlMessage::FREEDRIVE_NOOP);
+      ur_driver_->writeFreedriveControlMessage(urcl::control::FreedriveControlMessage::FREEDRIVE_NOOP,
+                                               receive_timeout_);
 
     } else if (passthrough_trajectory_controller_running_) {
-      ur_driver_->writeTrajectoryControlMessage(urcl::control::TrajectoryControlMessage::TRAJECTORY_NOOP);
+      // Pass the configured keep_alive_count tolerance — the default overload
+      // hardcodes 200ms, which WiFi latency spikes exceed within seconds.
+      ur_driver_->writeTrajectoryControlMessage(urcl::control::TrajectoryControlMessage::TRAJECTORY_NOOP, 0,
+                                                receive_timeout_);
       check_passthrough_trajectory_controller();
     } else {
       // Use the configured keep_alive_count tolerance here too — the no-arg
@@ -1387,7 +1391,7 @@ void URPositionHardwareInterface::check_passthrough_trajectory_controller()
          point_index_received == passthrough_trajectory_size_ - 1) &&
         !trajectory_started) {
       ur_driver_->writeTrajectoryControlMessage(urcl::control::TrajectoryControlMessage::TRAJECTORY_START,
-                                                trajectory_joint_positions_.size());
+                                                trajectory_joint_positions_.size(), receive_timeout_);
       trajectory_started = true;
     }
   } else if (passthrough_trajectory_transfer_state_ == 3.0) {

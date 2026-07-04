@@ -34,9 +34,11 @@
         robot over WiFi with latency spikes >100ms; the upstream default of 2
         (40ms) makes External Control drop within seconds. WiFi also goes
         fully silent for a few hundred ms every ~15-60s (power save /
-        background scan). 100 → 2s. Requires the workspace ur_client_library
-        (MAX_RT_RECEIVE_TIMEOUT_MS raised), else clamped to 200ms. -->
-   <xacro:arg name="keep_alive_count" default="100"/>
+        background scan); on the MiR-hotspot network (double WiFi hop) even
+        multi-second gaps occur. 250 → 5s (= workspace library max).
+        Requires the workspace ur_client_library (MAX_RT_RECEIVE_TIMEOUT_MS
+        raised to 5000), else clamped to 200ms. -->
+   <xacro:arg name="keep_alive_count" default="250"/>
    <!--   tool communication related parameters-->
    <xacro:arg name="use_tool_communication" default="false" />
    <xacro:arg name="tool_voltage" default="0" />
