@@ -108,14 +108,20 @@ def generate_launch_description():
     #     value_type=str
     # )
 
-    robot_description = Command(
-        [
-            PathJoinSubstitution([FindExecutable(name="xacro")]),
-            " ",
-            PathJoinSubstitution(
-                [FindPackageShare("mir_description"), "urdf", "mir.urdf.xacro"]
-            ),
-        ]
+    # value_type=str is required: without it launch_ros tries to YAML-parse the
+    # generated URDF, and any ':' in an XML comment makes that parse fail with
+    # "Unable to parse the value of parameter robot_description as yaml".
+    robot_description = ParameterValue(
+        Command(
+            [
+                PathJoinSubstitution([FindExecutable(name="xacro")]),
+                " ",
+                PathJoinSubstitution(
+                    [FindPackageShare("mir_description"), "urdf", "mir.urdf.xacro"]
+                ),
+            ]
+        ),
+        value_type=str,
     )
 
     robot_description2 = {"robot_description": robot_description}
@@ -167,8 +173,14 @@ def generate_launch_description():
     spawn_robot = Node(
         package='gazebo_ros',
         executable='spawn_entity.py',
+        # robot_x/robot_y/robot_yaw were declared but never reached
+        # spawn_entity, so the robot always appeared at the world origin
+        # regardless of what was passed on the command line.
         arguments=['-entity', LaunchConfiguration('robot_name'),
                    '-topic', 'robot_description',
+                   '-x', LaunchConfiguration('robot_x'),
+                   '-y', LaunchConfiguration('robot_y'),
+                   '-Y', LaunchConfiguration('robot_yaw'),
                    '-b'],  # bond node to gazebo model,
         namespace=LaunchConfiguration('namespace'),
         output='screen')
@@ -197,6 +209,63 @@ def generate_launch_description():
          event_handler=OnProcessExit(
              target_action=joint_broad_spawner,
              on_exit=[diff_drive_spawner],
+         )
+    )
+
+    # The UR5 arm has no controller unless we start one, so it goes limp and
+    # collapses under gravity: the gripper ends up at z ~= 0.05 m, right in the
+    # front laser's plane (z = 0.191 m). The merged /scan then marks the robot's
+    # own arm as an obstacle inside its own footprint, DWB's ObstacleFootprint
+    # critic rejects every forward trajectory, and Nav2 cannot move the base at
+    # all ("Failed to make progress"). Hold the arm in a stowed pose instead.
+    arm_controller_spawner = ExecuteProcess(
+        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
+             'joint_trajectory_controller'],
+        output='screen'
+    )
+
+    # The Robotiq fingers are likewise unactuated without a controller. They
+    # flap against their joint limits every physics step, and that vibration is
+    # enough to shake the whole base: with the drive wheels commanded to zero
+    # the robot still crept and spun across the world at ~0.15 m/s, which wrecks
+    # wheel odometry and makes AMCL unable to localise. Holding them still drops
+    # the idle drift to ~0.0007 m/s.
+    gripper_controller_spawner = ExecuteProcess(
+        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
+             'gripper_position_controller'],
+        output='screen'
+    )
+
+    stow_arm = ExecuteProcess(
+        cmd=['ros2', 'action', 'send_goal',
+             '/joint_trajectory_controller/follow_joint_trajectory',
+             'control_msgs/action/FollowJointTrajectory',
+             '{trajectory: {joint_names: [ur_shoulder_pan_joint,'
+             ' ur_shoulder_lift_joint, ur_elbow_joint, ur_wrist_1_joint,'
+             ' ur_wrist_2_joint, ur_wrist_3_joint],'
+             ' points: [{positions: [0.0, -2.0, 2.4, -2.0, -1.57, 0.0],'
+             ' time_from_start: {sec: 6}}]}}'],
+        output='screen'
+    )
+
+    delayed_arm_controller_spawner = RegisterEventHandler(
+         event_handler=OnProcessExit(
+             target_action=diff_drive_spawner,
+             on_exit=[arm_controller_spawner],
+         )
+    )
+
+    delayed_gripper_controller_spawner = RegisterEventHandler(
+         event_handler=OnProcessExit(
+             target_action=arm_controller_spawner,
+             on_exit=[gripper_controller_spawner],
+         )
+    )
+
+    delayed_stow_arm = RegisterEventHandler(
+         event_handler=OnProcessExit(
+             target_action=gripper_controller_spawner,
+             on_exit=[stow_arm],
          )
     )
 
@@ -251,6 +320,9 @@ def generate_launch_description():
     
     ld.add_action(joint_broad_spawner)
     ld.add_action(diff_drive_spawner)
+    ld.add_action(delayed_arm_controller_spawner)
+    ld.add_action(delayed_gripper_controller_spawner)
+    ld.add_action(delayed_stow_arm)
     ld.add_action(launch_gazebo_world)
     ld.add_action(launch_mir_description)
     ld.add_action(spawn_robot)

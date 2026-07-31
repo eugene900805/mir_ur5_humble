@@ -236,8 +236,11 @@
     <xacro:arg name="isaac_joint_states" default="/isaac_joint_states" />
     <xacro:arg name="simulation_controllers" default="" />
 
-    <!-- initial position for simulations (Fake Hardware, Gazebo, Ignition) -->
-    <xacro:arg name="initial_positions_file" default="$(find ur_description)/config/initial_positions.yaml"/>
+    <!-- Initial position for simulations (Fake Hardware, Gazebo, Ignition).
+         Defaults to the stow pose rather than ur_description's arm-straight-out
+         pose, so the arm does not have to swing across the base right after
+         spawn. See mir_description/config/ur_stow_positions.yaml. -->
+    <xacro:arg name="initial_positions_file" default="$(find mir_description)/config/ur_stow_positions.yaml"/>
 
     <!-- convert to property to use substitution in function -->
     <xacro:property name="initial_positions_file" default="$(arg initial_positions_file)"/>
@@ -309,6 +312,12 @@
           <!-- <parameters>$(find mir_description)/config/ur_manipulator.yaml</parameters> -->
         </plugin>
       </gazebo>
+      <!-- gazebo_grasp_fix reports "Link ... can't be found in gazebo ...
+           Skipping" for several of the gripper links it is told to watch, so it
+           is only partly initialised. Set grasp_fix_plugin:=false to leave it
+           out (nothing else in the sim depends on it). -->
+      <xacro:arg name="grasp_fix_plugin" default="true" />
+      <xacro:if value="$(arg grasp_fix_plugin)">
       <gazebo>
         <plugin name="gazebo_grasp_fix" filename="libgazebo_grasp_fix.so">
           <arm>
@@ -333,6 +342,7 @@
           <contact_topic>__default_topic__</contact_topic>
         </plugin>
       </gazebo>
+      </xacro:if>
     </xacro:if>
 
     <xacro:if value="$(arg sim_ignition)">
@@ -369,7 +379,13 @@
       <origin xyz="0.035 0.05 0.03" rpy="0 ${pi} ${0.5 * pi}" />
     </joint> 
 
-    <xacro:sensor_d435i parent="ur_flange" name="realsense" use_nominal_extrinsics="true">
+    <!-- realsense_gazebo_plugin is off by default: it throws during Load and
+         regularly segfaults gzserver right afterwards, while never actually
+         publishing colour or depth. Pass realsense_gazebo_plugin:=true if you
+         have a working build of it. -->
+    <xacro:arg name="realsense_gazebo_plugin" default="false" />
+    <xacro:sensor_d435i parent="ur_flange" name="realsense" use_nominal_extrinsics="true"
+                        add_gazebo_plugin="$(arg realsense_gazebo_plugin)">
       <origin xyz="0.02 0 -0.061" rpy="${pi} 0 0"/>
     </xacro:sensor_d435i>
 

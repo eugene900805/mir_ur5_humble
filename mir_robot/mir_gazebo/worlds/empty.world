@@ -9,5 +9,14 @@
     <include>
       <uri>model://ground_plane</uri>
     </include>
+    <!-- Ground-truth poses on /gazebo/model_states and /gazebo/link_states,
+         so wheel odometry can be checked against what the base actually did.
+         Read the link_states entry "mir_robot::base_footprint". -->
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros>
+        <namespace>/gazebo</namespace>
+      </ros>
+      <update_rate>50.0</update_rate>
+    </plugin>
   </world>
 </sdf>

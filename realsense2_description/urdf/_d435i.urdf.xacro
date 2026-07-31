@@ -26,11 +26,18 @@ aluminum peripherial evaluation case.
   <xacro:include filename="$(find realsense2_description)/urdf/_d435i_imu_modules.urdf.xacro"/>
   <xacro:include filename="$(find realsense2_description)/urdf/_d435i_gazebo.xacro"/>
 
-  <xacro:macro name="sensor_d435i" params="parent *origin name:=camera use_nominal_extrinsics:=false">
+  <!-- add_gazebo_plugin: set false to build the camera's links, frames and IMU
+       but leave out librealsense_gazebo_plugin. That plugin throws during Load
+       ("Exception occured in the Load function of plugin with name[camera]")
+       and frequently takes gzserver down with a segfault immediately after. It
+       publishes no colour or depth either way, so leaving it out only removes
+       the random crashes. -->
+  <xacro:macro name="sensor_d435i" params="parent *origin name:=camera use_nominal_extrinsics:=false add_gazebo_plugin:=true">
     <xacro:sensor_d435 parent="${parent}" name="${name}" use_nominal_extrinsics="${use_nominal_extrinsics}">
       <xacro:insert_block name="origin" />
     </xacro:sensor_d435>
     <xacro:d435i_imu_modules name="${name}" use_nominal_extrinsics="${use_nominal_extrinsics}"/>
+    <xacro:if value="${add_gazebo_plugin}">
     <xacro:gazebo_d435i camera_name="${name}"
                         topics_ns="camera"
                         reference_link="${name}_link"
@@ -62,5 +69,6 @@ aluminum peripherial evaluation case.
                         align_depth="false"
                         visualize="true"
     />
+    </xacro:if>
   </xacro:macro>
 </robot>

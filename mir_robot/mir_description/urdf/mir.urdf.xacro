@@ -40,21 +40,34 @@
         <plugin>gazebo_ros2_control/GazeboSystem</plugin>
       </xacro:unless>
     </hardware>
+    <!-- Wheel command limits are in rad/s at the joint, not m/s at the base.
+         0.8 m/s (the nav max_vel_x) needs 0.8 / 0.0625 = 12.8 rad/s, so the old
+         +-1 rad/s limit was an order of magnitude below what navigation asks
+         for. MiR100 tops out at 1.5 m/s = 24 rad/s, which is what the joint
+         limit and these bounds are set to. -->
     <joint name="left_wheel_joint">
       <command_interface name="velocity">
-        <param name="min">-1</param>
-        <param name="max">1</param>
+        <param name="min">-24</param>
+        <param name="max">24</param>
       </command_interface>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
+      <param name="vel_kp">100.0</param>
+      <param name="vel_ki">20.0</param>
+      <param name="vel_kd">0.0</param>
+      <param name="vel_max_integral_error">10.0</param>
     </joint>
     <joint name="right_wheel_joint">
       <command_interface name="velocity">
-        <param name="min">-1</param>
-        <param name="max">1</param>
+        <param name="min">-24</param>
+        <param name="max">24</param>
       </command_interface>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
+      <param name="vel_kp">100.0</param>
+      <param name="vel_ki">20.0</param>
+      <param name="vel_kd">0.0</param>
+      <param name="vel_max_integral_error">10.0</param>
     </joint>
     <!-- The passive casters are state-only joints. Under Isaac we must NOT list
          them here: TopicBasedSystem then publishes /isaac_base_commands with

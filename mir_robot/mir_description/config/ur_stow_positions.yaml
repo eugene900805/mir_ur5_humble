@@ -1,0 +1,16 @@
+# UR5 joint positions the arm is spawned at in simulation.
+#
+# These match the stow pose mir_gazebo_launch.py commands after bringup. They
+# have to match: ur_description's default (shoulder_lift=-1.57, elbow=0) leaves
+# the arm sticking straight out, so the arm had to swing a long way to reach
+# the stow pose. Swinging ~20 kg of arm across the base while the freshly
+# spawned robot is still settling kicked it into one of several different
+# resting states, and the base then drove completely differently from run to
+# run (same config, four runs: 1.70 m / +6 deg, 0.61 m / +113 deg,
+# 2.43 m / -21 deg). Starting already stowed removes that transient.
+shoulder_pan_joint: 0.0
+shoulder_lift_joint: -2.0
+elbow_joint: 2.4
+wrist_1_joint: -2.0
+wrist_2_joint: -1.57
+wrist_3_joint: 0.0

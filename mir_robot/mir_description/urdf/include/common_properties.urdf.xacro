@@ -86,4 +86,10 @@
         izz="${0.0833333 * mass * (x*x + y*y)}" />
     </inertial>
   </xacro:macro>
+
+  <!-- Torsional (spin about the contact normal) friction on the drive wheels.
+       Exposed as a property because it looks like it should govern how well the
+       base turns; measured with ground truth it does not. 300, 1.0 and 0.0 all
+       give an identical 23% of the commanded in-place rotation rate. -->
+  <xacro:property name="mir_wheel_torsional" value="300" />
 </robot>

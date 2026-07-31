@@ -15,6 +15,12 @@ controller_manager:
     gripper_position_controller:
       type: position_controllers/GripperActionController
 
+    # Diagnostic: drives the wheel joints directly, bypassing diff_cont, to tell
+    # whether a velocity error comes from the diff-drive maths or from
+    # gazebo_ros2_control actually executing the joint command.
+    wheel_velocity_controller:
+      type: velocity_controllers/JointGroupVelocityController
+
 
 
 diff_cont:
@@ -58,7 +64,8 @@ diff_cont:
     linear:
       x:
         has_velocity_limits    : true
-        max_velocity           : 1.0  # m/s; move_base max_vel_x: 0.8
+        max_velocity           : 1.5  # m/s; MiR100 spec: 1.5 m/s forwards
+        min_velocity           : -0.3 # m/s; MiR100 spec: 0.3 m/s backwards
         has_acceleration_limits: true
         max_acceleration       : 2.0  # m/s^2; move_base acc_lim_x: 1.5
     angular:
@@ -104,3 +111,9 @@ gripper_position_controller:
     max_effort: 100.0
     stall_timeout: 3.0
     stall_velocity_threshold: 0.001
+
+wheel_velocity_controller:
+  ros__parameters:
+    joints:
+      - left_wheel_joint
+      - right_wheel_joint

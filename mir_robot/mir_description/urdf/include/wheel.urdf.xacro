@@ -8,7 +8,7 @@
       <parent link="${prefix}base_link" />
       <child link="${prefix}${locationprefix}_wheel_link" />
       <axis xyz="0 1 0" />
-      <limit effort="100" velocity="20.0" />
+      <limit effort="100" velocity="24.0" />
       <!-- <dynamics damping="0.0" friction="0.0"/> -->
       <!-- <gazebo reference="${prefix}${locationprefix}_wheel_joint">
         <implicitSpringDamper>1</implicitSpringDamper>
@@ -53,7 +53,7 @@
                 <slip2>0</slip2> -->
               </ode>
               <torsional>
-                <coefficient>300</coefficient>
+                <coefficient>${mir_wheel_torsional}</coefficient>
                 <use_patch_radius>false</use_patch_radius>
                 <surface_radius>${mir_100_act_wheel_radius}</surface_radius>
               </torsional>

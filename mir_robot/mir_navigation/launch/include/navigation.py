@@ -52,7 +52,15 @@ def generate_launch_description():
                        'waypoint_follower',
                        'velocity_smoother']
 
+    # Topic the base actually listens on (velocity_smoother's output).
     command_topic = LaunchConfiguration('cmd_vel_w_prefix')
+    # Raw controller output, consumed only by velocity_smoother. Previously
+    # controller_server published straight onto command_topic AND
+    # velocity_smoother both subscribed to and published onto command_topic,
+    # so the smoother fed on its own output: it kept re-issuing (and
+    # re-smoothing) the last velocity, its velocity_timeout never expired, and
+    # the base would not reliably come to a stop.
+    raw_command_topic = 'cmd_vel_nav'
 
     # Map fully qualified names to relative ones so the node's namespace can be prepended.
     # In case of the transforms (tf), currently, there doesn't seem to be a better alternative
@@ -158,7 +166,7 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
-                remappings=remappings + [('cmd_vel', command_topic)]),
+                remappings=remappings + [('cmd_vel', raw_command_topic)]),
             Node(
                 package='nav2_smoother',
                 executable='smoother_server',
@@ -219,7 +227,8 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings +
-                        [('cmd_vel', command_topic), ('cmd_vel_smoothed', command_topic)]),
+                        [('cmd_vel', raw_command_topic),
+                         ('cmd_vel_smoothed', command_topic)]),
             Node(
                 package='nav2_lifecycle_manager',
                 executable='lifecycle_manager',
@@ -241,7 +250,7 @@ def generate_launch_description():
                 plugin='nav2_controller::ControllerServer',
                 name='controller_server',
                 parameters=[configured_params],
-                remappings=remappings + [('cmd_vel', command_topic)]),
+                remappings=remappings + [('cmd_vel', raw_command_topic)]),
             ComposableNode(
                 package='nav2_smoother',
                 plugin='nav2_smoother::SmootherServer',
@@ -278,7 +287,8 @@ def generate_launch_description():
                 name='velocity_smoother',
                 parameters=[configured_params],
                 remappings=remappings +
-                           [('cmd_vel', command_topic), ('cmd_vel_smoothed', 'cmd_vel')]),
+                           [('cmd_vel', raw_command_topic),
+                            ('cmd_vel_smoothed', command_topic)]),
             ComposableNode(
                 package='nav2_lifecycle_manager',
                 plugin='nav2_lifecycle_manager::LifecycleManager',

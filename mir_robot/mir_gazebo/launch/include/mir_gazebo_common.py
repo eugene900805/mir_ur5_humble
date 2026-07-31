@@ -26,6 +26,15 @@ def generate_launch_description():
                          'min_height': -0.25,
                          'max_completion_time': 0.05,
                          'max_merge_time_diff': 0.005,
+                         # The merger defaults range_max to DBL_MAX, which
+                         # serialises into the LaserScan as inf. Beams with no
+                         # return are published as range_max + epsilon, and
+                         # nav2's costmap uses exactly those to raytrace-clear
+                         # stale obstacles -- with inf it never clears any, so
+                         # phantom obstacles stay in the local costmap forever.
+                         # The SICK S300 reports 29 m, so say 29 m.
+                         'range_min': 0.05,
+                         'range_max': 29.0,
                          'use_sim_time': LaunchConfiguration('use_sim_time'),
                          'best_effort': False}],
             namespace=namespace,    # adds namespace to topic names and frames

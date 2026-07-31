@@ -11,6 +11,17 @@
     <include>
     	<uri>model://maze</uri>
     </include>
+    <!-- Ground-truth poses on /gazebo/model_states and /gazebo/link_states.
+         Needed to evaluate navigation: wheel odometry drifts, and the pose
+         printed by `gz model -m mir_robot -i` is NOT base_footprint (it is
+         offset by ~2 m / 18 deg), so neither can be used as a reference.
+         Read link_states entry "mir_robot::base_footprint" instead. -->
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros>
+        <namespace>/gazebo</namespace>
+      </ros>
+      <update_rate>50.0</update_rate>
+    </plugin>
     <model name='marker_0001'>
       <static>1</static>
       <link name='link'>
@@ -30,5 +41,3 @@
     </model>
   </world>
 </sdf>
-
-[ x: -0.001047, y: 0.0124092, z: -1.5902233 ]
