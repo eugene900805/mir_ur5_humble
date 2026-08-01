@@ -53,6 +53,9 @@ def generate_launch_description():
                 # difference is well inside the robot and never seen by Nav2).
                 "range_min": 0.1,
                 "range_max": 29.0,
+                # Both simulated SICK sensors run at the Gazebo model's
+                # 12.5 Hz, so the merged LaserScan metadata is 1 / 12.5 s.
+                "scan_time": 0.08,
                 "max_completion_time": 0.05,
                 "max_merge_time_diff": 0.005,
                 "use_sim_time": use_sim_time,

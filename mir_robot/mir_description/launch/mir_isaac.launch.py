@@ -99,7 +99,7 @@ def generate_launch_description():
             description="Python interpreter that has isaacsim installed."),
         DeclareLaunchArgument(
             "isaac_dir",
-            default_value="/mnt/data/mir_isaac/src/mir_robot/isaac_sim",
+            default_value="/mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim",
             description="Directory containing mir_isaac_sim.py and usd/."),
     ]
     for a in declared_args:
@@ -154,11 +154,16 @@ def generate_launch_description():
         "robot_description": ParameterValue(robot_description_content, value_type=str)
     }
 
-    # Isaac-specific controller params (enable_odom_tf=false so the diff_drive
-    # controller does NOT also broadcast odom->base_footprint — the Isaac bridge
-    # does that via --publish-odom). Gazebo keeps the plain diffdrive_controller.yaml
-    # with enable_odom_tf=true; the two sims no longer share the conflicting flag.
+    # Controller params: the shared file both simulators use, then the Isaac
+    # deltas on top (later params files win). The only delta today is
+    # enable_odom_tf=false, because the Isaac bridge broadcasts
+    # odom->base_footprint itself. Everything else — wheel geometry, the MiR100
+    # speed limits, the arm/gripper controllers — stays in the shared file so it
+    # cannot drift between the two sims.
     controllers_file = PathJoinSubstitution(
+        [mir_description_share, "config", "diffdrive_controller.yaml"]
+    )
+    controllers_file_isaac = PathJoinSubstitution(
         [mir_description_share, "config", "diffdrive_controller_isaac.yaml"]
     )
 
@@ -175,7 +180,7 @@ def generate_launch_description():
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[robot_description, controllers_file,
+        parameters=[robot_description, controllers_file, controllers_file_isaac,
                     {"use_sim_time": use_sim_time}],
         output="both",
     )

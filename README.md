@@ -1,17 +1,110 @@
-# mir100+ur5+d435i+robotiq85
+# MiR100 + UR5 + D435i + Robotiq85
 
 ![MiR100 + UR5 + Robotiq85 in NVIDIA Isaac Sim](Isaac_Sim_Mir_Ur5.png)
 
-> **Isaac Sim back-end available.** This robot can be simulated in NVIDIA
-> Isaac Sim 5.0 (instead of Gazebo) while keeping the same ros2_control + MoveIt2
-> stack. See **[`isaac_sim/README_isaac.md`](isaac_sim/README_isaac.md)**.
-> Quick start:
-> ```
-> # terminal 1 (Isaac Sim):
-> /mnt/data/IsaacSim/_build/linux-x86_64/release/python.sh isaac_sim/mir_isaac_sim.py
-> # terminal 2 (ROS control + MoveIt):
-> ros2 launch mir_description mir_isaac.launch.py
-> ```
+這個 workspace 整合 MiR100 移動底盤、UR5 手臂、Robotiq 85 夾爪與
+RealSense D435i，支援 Isaac Sim、Gazebo Classic 與實體機器人。Isaac 與
+Gazebo 共用同一套 ROS 2 Control、Nav2 和 MoveIt2 設定。
+
+## 先選擇要做什麼
+
+| 目的 | 從哪裡開始 |
+|---|---|
+| 在 Isaac GUI 裡跑迷宮、用 RViz 下導航目標 | 直接照下一節的 4 個終端機啟動 |
+| 用 Gazebo 建圖或導航 | [Gazebo demo](#gazebo-demo-mapping) |
+| 操作 MiR100 + UR5 實機 | [Real robot demo](#real-robot-demo-mir100--ur5-hardware) |
+| 修改 USD、感測器或物理參數 | [`isaac_sim/README_isaac.md`](isaac_sim/README_isaac.md) |
+| 查 Isaac / Nav2 已知問題與實測結果 | [`isaac_debug.md`](isaac_debug.md) |
+
+## 快速啟動：Isaac Sim 迷宮導航（GUI）
+
+這是目前驗證過、最接近 Gazebo 行為的啟動方式。Isaac、ROS Control、AMCL
+和 Nav2 分開啟動，發生問題時也最容易看出是哪一層。
+
+### 0. 第一次使用或修改程式後先建置
+
+```bash
+cd /mnt/data/mir_isaac
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+```
+
+以下指令使用 `ROS_DOMAIN_ID=94` 隔離同一網路上的其他 ROS 節點。若要改
+數字，**Isaac 和所有 ROS 終端機必須使用同一個 ID**。
+
+### 1. Terminal 1：啟動 Isaac GUI 與迷宮
+
+```bash
+env ROS_DOMAIN_ID=94 \
+  /home/shareduser/anaconda3/envs/env_isaaclab_opt/bin/python \
+  /mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim/mir_isaac_sim.py \
+  --lasers \
+  --world /mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim/usd/maze.usd \
+  --top-down
+```
+
+等 Isaac 載入完成並開始模擬後再開其餘終端機。Isaac 是 `/clock` 來源；
+執行途中若重啟 Isaac，下面三個 ROS launch 也要一起重啟。
+
+### 2. Terminal 2：啟動 ROS Control、RViz 與雙雷射合併
+
+```bash
+cd /mnt/data/mir_isaac
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=94
+
+ros2 launch mir_description mir_isaac.launch.py launch_moveit:=false
+```
+
+這個 launch 已包含 robot state publisher、ROS Control、RViz，以及
+`/f_scan + /b_scan -> /scan`；不要再另外啟動 scan merger。若也要操作
+UR5 手臂，移除 `launch_moveit:=false` 即可。
+
+### 3. Terminal 3：使用現有迷宮地圖定位
+
+```bash
+cd /mnt/data/mir_isaac
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=94
+
+ros2 launch mir_navigation amcl.py use_sim_time:=true \
+  map:=/mnt/data/mir_isaac/src/mir_ur5_humble/mir_robot/mir_navigation/maps/maze.yaml
+```
+
+### 4. Terminal 4：啟動 Nav2
+
+```bash
+cd /mnt/data/mir_isaac
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=94
+
+ros2 launch mir_navigation navigation.py use_sim_time:=true \
+  cmd_vel_w_prefix:=/diff_cont/cmd_vel_unstamped
+```
+
+### 5. 在 RViz 操作
+
+1. 用 **2D Pose Estimate** 在地圖上設定車子的初始位置與朝向。
+2. 等雷射點雲和地圖對齊後，用 **Nav2 Goal** 拖出目標箭頭。
+3. 箭頭方向也是最終朝向。車子到達目標位置後，可能會原地轉到該方向；
+   Nav2 顯示 `Goal succeeded` 才代表整個導航完成。
+
+快速檢查：
+
+```bash
+ros2 topic hz /scan                         # 約 12 Hz
+ros2 control list_controllers               # controllers 應為 active
+ros2 lifecycle get /amcl                    # active
+ros2 lifecycle get /bt_navigator            # active
+```
+
+若目標已接受但車子不動，先檢查 `/scan` 和 AMCL，再確認 Isaac 沒有被重啟。
+迷宮窄口、原地轉向與壓力測試的實測紀錄在
+[`isaac_debug.md`](isaac_debug.md)。
 
 # Installation
 
@@ -58,107 +151,98 @@ cd ~/ros2_ws
 colcon build
 ```
 
-# Gazebo demo (mapping)
-```
-### gazebo: 
-ros2 launch mir_gazebo mobile_manipulator.launch.py world:=maze
+# Gazebo demo
 
-### mapping (slam_toolbox)
-ros2 launch mir_navigation mapping.py use_sim_time:=true slam_params_file:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/config/mir_mapping_async_sim.yaml
+每個終端機先執行：
 
-### navigation (optional)
-ros2 launch mir_navigation navigation.py use_sim_time:=true cmd_vel_w_prefix:=/diff_cont/cmd_vel_unstamped
+```bash
+cd /mnt/data/mir_isaac
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=94
 ```
 
-# Gazebo demo (Navigation with existing map)
-```
-### gazebo:
+### 使用現有地圖導航
+
+依序開三個終端機：
+
+```bash
+# Terminal 1：Gazebo 迷宮 + RViz
 ros2 launch mir_gazebo mobile_manipulator.launch.py world:=maze \
-    rviz_config_file:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/rviz/mir_nav.rviz
+  rviz_config_file:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/rviz/mir_nav.rviz
 
-
-### localization (existing map)
+# Terminal 2：AMCL 定位
 ros2 launch mir_navigation amcl.py use_sim_time:=true \
-    map:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/maps/maze.yaml
+  map:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/maps/maze.yaml
 
-### navigation
-ros2 launch mir_navigation navigation.py use_sim_time:=true
-
-### set initial pose
-ros2 topic pub /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "header:
-  stamp:
-    sec: 0
-    nanosec: 0
-  frame_id: 'map'
-pose:
-  pose:
-    position:
-      x: 0.0
-      y: 0.0
-      z: 0.0
-    orientation:
-      x: 0.0
-      y: 0.0
-      z: 0.0
-      w: 1.0
-" --once
-
-### MoveIt2:
-ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur5 launch_rviz:=true \
-    prefix:=ur_ use_fake_hardware:=true use_sim_time:=true
-```
-
-# Isaac Sim demo (Navigation with existing map)
-
-> Isaac Sim 5.0 replaces Gazebo as the physics/sensor back-end; the ROS 2
-> control + Nav2 + MoveIt stack is identical. Full details in
-> [`isaac_sim/README_isaac.md`](isaac_sim/README_isaac.md).
-
-Run each block in its own terminal; every ROS terminal needs
-`cd <workspace> && source install/setup.bash` first. **Start Isaac FIRST** — it
-is the `/clock` source, so restarting it resets sim time and crashes the live
-ROS stack / RViz.
-
-```
-### Terminal 1 — Isaac Sim (two SICK S300 lasers + ground-truth odom), then press Play
-python src/mir_robot/isaac_sim/mir_isaac_sim.py --lasers --publish-odom \
-    --world src/mir_robot/isaac_sim/usd/maze.usd --top-down
-#   must run with Isaac's python; e.g. from the Isaac build dir:
-#   <IsaacSim>/_build/linux-x86_64/release/python.sh <abs path>/mir_isaac_sim.py --lasers ...
-#   add --headless to run without a GUI (PhysX lidar works headless)
-
-### Terminal 2 — robot_state_publisher + ros2_control + MoveIt + RViz + scan merger (all-in-one)
-ros2 launch mir_description mir_isaac.launch.py
-#   one launch gives the whole TF tree, merges /f_scan + /b_scan -> /scan, opens RViz.
-#   drop pieces with: launch_moveit:=false  launch_rviz:=false  launch_scan_merger:=false
-
-### Terminal 3 — localization (existing map)
-ros2 launch mir_navigation amcl.py use_sim_time:=true \
-    map:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/maps/maze.yaml
-    
-### Terminal 4 — navigation
+# Terminal 3：Nav2
 ros2 launch mir_navigation navigation.py use_sim_time:=true \
-    cmd_vel_w_prefix:=/diff_cont/cmd_vel_unstamped
+  cmd_vel_w_prefix:=/diff_cont/cmd_vel_unstamped
 ```
 
-For SLAM instead of a saved map, replace Terminal 3 with:
-```
+在 RViz 先按 **2D Pose Estimate**，雷射與地圖對齊後再按 **Nav2 Goal**。
+
+### 使用 SLAM 建圖
+
+Terminal 1 仍啟動 Gazebo；Terminal 2 改成：
+
+```bash
 ros2 launch mir_navigation mapping.py use_sim_time:=true \
-    slam_params_file:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/config/mir_mapping_async_sim.yaml
+  slam_params_file:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/config/mir_mapping_async_sim.yaml
 ```
 
-In RViz: **2D Pose Estimate** to seed AMCL → **Nav2 Goal** to send a target.
-Health checks: `ros2 topic hz /scan` (~12 Hz), and
-`ros2 run tf2_ros tf2_echo odom base_footprint` (Isaac's `--publish-odom`
-provides this). Unlike Gazebo, Isaac publishes `/f_scan` + `/b_scan` separately,
-so the scan merger (bundled in Terminal 2) is required.
+需要一邊建圖一邊自動導航時，再啟動上面的 Terminal 3。
 
-> **Isaac vs Gazebo gotcha — `enable_odom_tf`:** they use *different* controller
-> param files. Gazebo's `diffdrive_controller.yaml` has `enable_odom_tf: true`
-> (it is the only odom→base_footprint source). Isaac uses
-> `diffdrive_controller_isaac.yaml` with `enable_odom_tf: false`, because the
-> Isaac bridge already broadcasts that TF via `--publish-odom`. `mir_isaac.launch.py`
-> picks the Isaac file automatically — do not point Gazebo at it or nav breaks.
+### MoveIt2（選用）
+
+```bash
+ros2 launch ur_moveit_config ur_moveit.launch.py \
+  ur_type:=ur5 prefix:=ur_ launch_rviz:=true \
+  use_fake_hardware:=true use_sim_time:=true
+```
+
+# Isaac Sim options
+
+完整的 GUI 迷宮導航流程已放在 README 最上方。以下只列常用變化；感測器、
+USD 轉換和物理參數的完整說明請看
+[`isaac_sim/README_isaac.md`](isaac_sim/README_isaac.md)。
+
+### 單一指令啟動 Isaac + ROS Control + RViz
+
+```bash
+ros2 launch mir_description mir_isaac.launch.py \
+  launch_isaac:=true world:=maze top_down:=true launch_moveit:=false
+```
+
+這種方式較省指令；需要分別觀察 Isaac 與 ROS 輸出時，仍建議使用上方的
+4-terminal 流程。
+
+### 改用 SLAM 建圖
+
+保留快速啟動的 Terminal 1、2、4，並用下面指令取代 AMCL：
+
+```bash
+ros2 launch mir_navigation mapping.py use_sim_time:=true \
+  slam_params_file:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/config/mir_mapping_async_sim.yaml
+```
+
+### 常用啟動選項
+
+```bash
+# 不開 Isaac GUI（PhysX 雷射仍可用）
+ros2 launch mir_description mir_isaac.launch.py \
+  launch_isaac:=true world:=maze headless:=true launch_rviz:=false launch_moveit:=false
+
+# 只開 ROS Control，不開 MoveIt、RViz 或 scan merger
+ros2 launch mir_description mir_isaac.launch.py \
+  launch_moveit:=false launch_rviz:=false launch_scan_merger:=false
+```
+
+Isaac 會發布 `/f_scan`、`/b_scan`、`/odom` 與
+`odom -> base_footprint`；ROS launch 預設合併兩個雷射成 `/scan`。
+`diffdrive_controller_isaac.yaml` 只覆寫 `enable_odom_tf: false`，避免 ROS
+Control 和 Isaac 重複發布同一段 TF。其餘控制器參數與 Gazebo 共用
+`diffdrive_controller.yaml`，避免兩套模擬器的設定逐漸不一致。
 
 # Real robot demo (MiR100 + UR5 hardware)
 
@@ -241,7 +325,7 @@ Key points (details in `claude_debug.md`):
   map→odom TF); no local AMCL/map_server. Old behavior:
   `use_mir_localization:=false map:=maze.yaml`.
 - Speed limits are launch args: real-robot defaults `max_vel_x:=0.3`,
-  `max_vel_theta:=0.5` (params-file originals: 0.8 m/s, 1.0 rad/s). Override:
+  `max_vel_theta:=0.5` (simulation defaults: 1.2 m/s, 1.0 rad/s). Override:
   `max_vel_x:=0.5 max_vel_theta:=0.8`.
 - Before relaunching, kill leftovers or duplicate action servers break Nav2
   (`unknown goal response`):
@@ -257,7 +341,7 @@ This tree was set up with the workspace at `/mnt/data/mir_isaac` and Isaac Sim a
 | Isaac Sim install | `/mnt/data/IsaacSim/_build/linux-x86_64/release/python.sh` | Terminal 1 / docs | point at *your* Isaac build's `python.sh` |
 | Workspace root | `/mnt/data/mir_isaac` | run commands | use your own ws (the install section above uses `~/ros2_ws`) |
 | `isaac_python` arg | `/home/shareduser/anaconda3/envs/env_isaaclab_opt/bin/python` | `mir_description/launch/mir_isaac.launch.py` (~line 98) | a python that has Isaac / `pxr`; override `isaac_python:=...` (only used when `launch_isaac:=true`) |
-| `isaac_script_dir` arg | `/mnt/data/mir_isaac/src/mir_robot/isaac_sim` | `mir_isaac.launch.py` (~line 102) | override `isaac_script_dir:=...` (only when `launch_isaac:=true`) |
+| `isaac_dir` arg | `/mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim` | `mir_isaac.launch.py` | override `isaac_dir:=...` (only when `launch_isaac:=true`) |
 
 Other portability notes:
 - `mir_isaac_sim.py` is meant to be run directly; its `--usd` default is computed
@@ -292,6 +376,3 @@ Other portability notes:
 The 3d files for MiR 100 is from [DFKI](https://github.com/DFKI-NI/mir_robot).
 The 3d model and plugins for UR5 are from [Universal_Robots_ROS2_Driver](https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver).
 The Realsense plugin is from [PAL Robotics](https://github.com/pal-robotics/realsense_gazebo_plugin/tree/foxy-devel) and description from [Intel](https://github.com/IntelRealSense/realsense-ros).
-
-
-

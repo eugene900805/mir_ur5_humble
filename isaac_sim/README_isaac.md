@@ -79,7 +79,7 @@ joints), and the caster joints. Articulation root: `/World/Robot/base_footprint`
 ## 2. Build the ROS workspace
 
 ```bash
-cd /mnt/data/mir_isaac/mir_ur5_humble
+cd /mnt/data/mir_isaac
 # system python for ROS (not the conda one):
 PATH=/usr/bin:/bin:/opt/ros/humble/bin:$PATH PYTHONPATH= \
   colcon build --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
@@ -97,7 +97,7 @@ the xacro (e.g. after changing the robot):
 
 ```bash
 conda activate env_isaaclab_opt
-cd /mnt/data/mir_isaac/mir_ur5_humble
+cd /mnt/data/mir_isaac
 # 3a. xacro → URDF (Isaac hardware interface selected)
 xacro install/mir_description/share/mir_description/urdf/mir.urdf.xacro \
      sim_isaac:=true sim_gazebo:=false ur_type:=ur5 > isaac_sim/mir_isaac_raw.urdf
@@ -111,6 +111,19 @@ python isaac_sim/fix_dae_orientation.py isaac_sim/usd/configuration/mir_isaac_ba
 python isaac_sim/fix_mimic_limits.py
 ```
 
+Do re-run this after any change to the shared xacro — the USD is a snapshot, and
+a stale one drifts silently. Example: the MiR100 spec fix raised the wheel joint
+limit 20 → 24 rad/s, and until the USD was rebuilt PhysX still capped the wheels
+at `physxJoint:maxJointVelocity = 1145.9 °/s` (20 rad/s = 1.25 m/s) while ROS
+believed it could command 1.5 m/s.
+
+The maze environment is a separate stage built from the Gazebo world, so the two
+simulators drive through identical geometry:
+
+```bash
+python isaac_sim/convert_maze_to_usd.py     # mir_gazebo/worlds/include/maze/model.sdf -> usd/maze.usd
+```
+
 See `../mir_ur5/README.md` for the full background on each fix.
 
 ## 4. Run
@@ -119,15 +132,25 @@ See `../mir_ur5/README.md` for the full background on each fix.
 
 ```bash
 cd /mnt/data/IsaacSim/_build/linux-x86_64/release
-./python.sh /mnt/data/mir_isaac/mir_ur5_humble/isaac_sim/mir_isaac_sim.py
+./python.sh /mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim/mir_isaac_sim.py
 #   add --headless to run without a GUI
-#   add --publish-odom to also get odom→base_footprint from Isaac ground-truth
+#   odom→base_footprint + /odom (Isaac ground truth) are published by DEFAULT;
+#   --no-publish-odom turns them off, but then you must also flip the ROS side
+#   to enable_odom_tf:=true or nothing publishes that transform at all
+```
+
+Or bring up both halves with one command (`launch_isaac:=true` starts
+`mir_isaac_sim.py` as a child process of the launch, matching the Gazebo
+workflow):
+
+```bash
+ros2 launch mir_description mir_isaac.launch.py launch_isaac:=true world:=maze
 ```
 
 **Terminal 2 — ROS control + MoveIt + RViz:**
 
 ```bash
-cd /mnt/data/mir_isaac/mir_ur5_humble && source install/setup.bash
+cd /mnt/data/mir_isaac && source install/setup.bash
 ros2 launch mir_description mir_isaac.launch.py
 #   launch_moveit:=false  launch_rviz:=false   to drop pieces
 ```
@@ -154,7 +177,7 @@ ros2 action send_goal /gripper_position_controller/gripper_cmd \
 | Joint states (all 22 movable joints) | `/isaac_joint_states` | ✅ ~50 Hz |
 | Sim clock | `/clock` | ✅ |
 | IMU (`imu_link`) | `/imu_data` (`sensor_msgs/Imu`) | ✅ ~50 Hz |
-| 2× SICK S300 lidars (PhysX) | `/f_scan`, `/b_scan` (`sensor_msgs/LaserScan`) | ✅ `--lasers` (headless OK) |
+| 2× SICK S300 lidars (PhysX) | `/f_scan`, `/b_scan` (`sensor_msgs/LaserScan`) | ✅ `--lasers`, ~12 Hz (headless OK) |
 | 2× SICK S300 lidars (RTX) | `/f_scan`, `/b_scan` (`sensor_msgs/LaserScan`) | ⚠️ `--rtx-lasers`, needs viewport |
 | Intel D435i RGB-D (RTX) | `/realsense/{color/image_raw, depth/image_rect_raw, color/camera_info}` | ⚠️ `--camera`, needs viewport |
 
@@ -194,7 +217,16 @@ python isaac_sim/mir_isaac_sim.py --rtx-lasers --camera
 Pure-OmniGraph ray-cast: `RangeSensorCreateLidar → IsaacReadLidarBeams →
 ROS2PublishLaserScan`. No render product, no SDG pipeline. SICK S300 parameters:
 0.05–29 m, ±120° (240° FOV), 541 samples. Works headless and is the default
-choice for Nav2 / SLAM runs.
+choice for Nav2 / SLAM runs. A simulation gate publishes every fifth 60 Hz tick
+(12 Hz), matching Gazebo's 12.5 Hz SICK update rate without flooding AMCL,
+costmaps and MPPI with duplicate scans.
+
+The imported chassis mesh encloses the two corner-mounted ray origins, so its
+collider is excluded from lidar queries. The script restores physical wall
+contact with an invisible, low-profile `0.89 × 0.58 m` chassis collision proxy
+below the laser plane. This keeps the Gazebo/Nav2 footprint while preventing
+the scanners from seeing the robot itself and prevents wheel/caster-only wall
+contacts from wedging the articulation at the maze entrance.
 
 #### RTX lidar (`--rtx-lasers`) — needs viewport
 
@@ -261,7 +293,7 @@ whole nav stack runs without a viewport.
 | Nav input | source | ready? |
 |---|---|---|
 | `/clock` | Isaac | ✅ |
-| `/odom` + `odom→base_footprint` TF | `diff_cont` (from wheel joint states) | ✅ |
+| `/odom` + `odom→base_footprint` TF | Isaac ground truth (on by default; `diff_cont` has `enable_odom_tf:false`) | ✅ |
 | robot `/tf` | robot_state_publisher | ✅ |
 | `/f_scan`, `/b_scan` | Isaac PhysX lidars (`--lasers`) | ✅ |
 | `/scan` | `ira_laser_tools` merge of `/f_scan` + `/b_scan` | merger |
@@ -310,8 +342,16 @@ Sanity check before nav: `ros2 topic hz /scan` should be ~12 Hz.
 - The drive wheels are switched to **velocity** drive in `mir_isaac_sim.py`;
   the arm/gripper keep position drives. `diff_cont` writes wheel velocities,
   which reach Isaac through `/isaac_base_commands`.
-- Odometry: by default the `diff_drive_controller` provides `odom→base_footprint`.
-  Pass `--publish-odom` to publish Isaac ground-truth odometry/TF instead.
+- Odometry: **Isaac** publishes `odom→base_footprint` + `/odom` (ground truth),
+  and the ROS side is configured to match — `diffdrive_controller_isaac.yaml`
+  sets `enable_odom_tf: false` so the two do not both broadcast the same
+  transform. Both halves of that pairing are on by default; `--no-publish-odom`
+  turns the Isaac side off and then **you must also set `enable_odom_tf: true`**,
+  or nothing broadcasts `odom→base_footprint` at all and Nav2/AMCL have no TF
+  chain to the robot (silent failure: the goal is accepted and the robot never
+  moves). Verify with
+  `ros2 topic echo /tf | grep -c base_footprint` or `tf2_echo odom base_footprint
+  --ros-args -p use_sim_time:=true`.
 - MoveIt arm execution: `trajectory_execution.allowed_start_tolerance` is raised
   to 0.1 rad in `mir_isaac.launch.py` because Isaac's PD-driven joints jitter at
   the ~0.01 rad level (the default rejects execution with "start point deviates").
@@ -336,10 +376,15 @@ Sanity check before nav: `ros2 topic hz /scan` should be ~12 Hz.
   unaffected — `make_isaac_urdf.py` strips all `<ros2_control>` blocks before
   import.
 - **Jitter / idle-rotation tuning** (`mir_isaac_sim.py`): the imported
-  articulation needs several non-default physics knobs to sit still and not
-  buzz. All are CLI flags whose **defaults are already the values verified to
-  work**, so the normal run command needs none of them; they're exposed only for
-  tuning. Symptom → fix:
+  articulation may need non-default physics knobs to sit still and not buzz.
+  These are CLI flags. **Only the gripper ones are on by default**
+  (`--gripper-armature 0.05`, `--solver-position-iterations 32`, self-collisions
+  off) — the chassis and arm knobs below all default to **0.0**, i.e. off,
+  because the damping values are a cure that can be worse than the disease
+  (`--base-linear-damping 2.0` drags the base so hard it barely drives under
+  Nav2). Measured on the current build: with every chassis knob at 0.0 the idle
+  base is **exactly** static (0.000 mm/s linear, 0.0°/h yaw over 58 s of sim
+  time), so reach for these only if you actually see movement. Symptom → fix:
   - *Gripper buzzes.* The Robotiq fingers have ~1e-5 kg·m² inertia, so the stiff
     position drive + the hard PhysX mimic coupling (`physxMimicJoint:gearing` on
     an over-constrained 4-bar linkage) oscillate faster than the sim step can
@@ -351,14 +396,15 @@ Sanity check before nav: `ros2 topic hz /scan` should be ~12 Hz.
     (`--keep-self-collisions` to re-enable) so the fingers don't graze each
     other — external-object collision (grasping) is unaffected.
   - *Arm (wrist) jitters.* Same low-inertia ringing on the small wrist joints →
-    **armature** on the 6 UR joints (`--arm-armature`, default 0.05).
-  - *Base slowly rotates in place when idle.* Two causes, two knobs: the trailing
-    casters (`caster_wheel_dx = -0.0382 m`) pump yaw into the chassis when their
-    swivel is fully free → light **caster swivel damping** (`--caster-swivel-
-    damping`, default 2.0; rolling wheels stay free); and the chassis itself
-    micro-wobbles in yaw on the casters (visible as the long arm appearing to
-    move) → **base_link rigid-body damping** (`--base-angular-damping` default
-    5.0, `--base-linear-damping` default 2.0). These do not block commanded
-    driving — the wheels still drive the base; they're just realistic drag that
-    bleeds off the idle self-excitation. Raise `--base-angular-damping` (10, 20)
-    if it still wobbles; lower it if commanded turns feel sluggish.
+    **armature** on the 6 UR joints (`--arm-armature`, **default 0.0 = off**;
+    0.05 is the value to try).
+  - *Base slowly rotates in place when idle.* Two causes, two knobs, **both
+    default 0.0 = off**: the trailing casters (`caster_wheel_dx = -0.0382 m`)
+    pump yaw into the chassis when their swivel is fully free → light **caster
+    swivel damping** (`--caster-swivel-damping`, try 2.0; rolling wheels stay
+    free); and the chassis itself micro-wobbles in yaw on the casters (visible
+    as the long arm appearing to move) → **base_link rigid-body damping**
+    (`--base-angular-damping`, try 5.0). Use these sparingly and re-test
+    driving afterwards: they are drag on the real motion too, and
+    `--base-linear-damping` in particular (try 2.0 only if you must) is strong
+    enough to stop Nav2 driving the base at all.

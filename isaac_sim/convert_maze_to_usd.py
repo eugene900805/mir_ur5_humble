@@ -18,6 +18,15 @@ import xml.etree.ElementTree as ET
 
 from pxr import Gf, Sdf, UsdGeom, UsdPhysics, UsdShade, Usd  # noqa: F401
 
+# PhysxSchema is registered by Isaac's physx extension, so it is only importable
+# when a SimulationApp is up. This script is plain pxr (it runs standalone to
+# regenerate the stage), so fall back to authoring the physx attributes by name —
+# the resulting USD is identical either way.
+try:
+    from pxr import PhysxSchema
+except ImportError:
+    PhysxSchema = None
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.normpath(os.path.join(HERE, ".."))
 DEFAULT_SDF = os.path.join(
@@ -69,6 +78,17 @@ def main():
     shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.8)
     mat.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
 
+    # A *physics* material. The UsdShade material above is purely visual and has
+    # no bearing on contact: without this the walls run on PhysX's default
+    # friction, and a base that Nav2 presses into a wall slides along and digs
+    # into it instead of being held. Bound under the "physics" purpose, so it
+    # coexists with the visual binding rather than replacing it.
+    phys_mat = UsdShade.Material.Define(stage, "/World/maze/WallPhysicsMaterial")
+    phys_api = UsdPhysics.MaterialAPI.Apply(phys_mat.GetPrim())
+    phys_api.CreateStaticFrictionAttr().Set(0.8)
+    phys_api.CreateDynamicFrictionAttr().Set(0.8)
+    phys_api.CreateRestitutionAttr().Set(0.0)
+
     n = 0
     for link in model.findall("link"):
         link_pose = parse_pose(link.findtext("pose"))
@@ -93,7 +113,34 @@ def main():
 
         # static collider + material
         UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+        # Author the contact offsets explicitly. These cubes are unit cubes that
+        # carry their real dimensions (up to 16 m) as a non-uniform scale in the
+        # transform matrix; leaving the offsets unauthored means PhysX derives
+        # them from that scale, so a 16 m wall and a 1.5 m wall end up with very
+        # different contact skins. A robot pressed into a corner where two such
+        # walls meet can then penetrate deeply before contact is generated, and
+        # the solver ejects it. Fixed values give every wall the same skin.
+        if PhysxSchema is not None:
+            px = PhysxSchema.PhysxCollisionAPI.Apply(cube.GetPrim())
+            px.CreateContactOffsetAttr().Set(0.02)
+            px.CreateRestOffsetAttr().Set(0.0)
+        else:
+            # ApplyAPI() refuses an unregistered schema, so append the token to
+            # apiSchemas by hand and author the attributes. Byte-for-byte the
+            # same result as PhysxCollisionAPI.Apply() under Isaac's python.
+            p = cube.GetPrim()
+            listop = p.GetMetadata("apiSchemas")
+            items = list(listop.GetAddedOrExplicitItems()) if listop else []
+            if "PhysxCollisionAPI" not in items:
+                items.append("PhysxCollisionAPI")
+            p.SetMetadata("apiSchemas", Sdf.TokenListOp.CreateExplicit(items))
+            p.CreateAttribute("physxCollision:contactOffset",
+                              Sdf.ValueTypeNames.Float, False).Set(0.02)
+            p.CreateAttribute("physxCollision:restOffset",
+                              Sdf.ValueTypeNames.Float, False).Set(0.0)
         UsdShade.MaterialBindingAPI(cube.GetPrim()).Bind(mat)
+        UsdShade.MaterialBindingAPI(cube.GetPrim()).Bind(
+            phys_mat, UsdShade.Tokens.weakerThanDescendants, "physics")
         n += 1
 
     stage.GetRootLayer().Save()

@@ -35,6 +35,8 @@ def generate_launch_description():
                          # The SICK S300 reports 29 m, so say 29 m.
                          'range_min': 0.05,
                          'range_max': 29.0,
+                         # SICK S300 Gazebo plugins publish at 12.5 Hz.
+                         'scan_time': 0.08,
                          'use_sim_time': LaunchConfiguration('use_sim_time'),
                          'best_effort': False}],
             namespace=namespace,    # adds namespace to topic names and frames

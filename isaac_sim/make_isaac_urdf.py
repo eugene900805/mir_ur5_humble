@@ -25,7 +25,23 @@ import shutil
 import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_WS = os.path.normpath(os.path.join(HERE, "..", "install"))
+
+
+def _default_ws():
+    """Locate the colcon install/ dir. The repo has lived both at the workspace
+    root and under <ws>/src/, so walk up until an install/ shows up rather than
+    hard-coding one of the two (the old fixed ../install silently resolved to
+    nothing, and every package:// mesh was then dropped from the URDF)."""
+    d = HERE
+    for _ in range(5):
+        d = os.path.dirname(d)
+        cand = os.path.join(d, "install")
+        if os.path.isdir(cand):
+            return cand
+    return os.path.normpath(os.path.join(HERE, "..", "install"))
+
+
+DEFAULT_WS = _default_ws()
 
 # Robotiq passive joints range within +-master_upper (0.8). A small margin
 # keeps PhysX happy without clipping the coupled motion.

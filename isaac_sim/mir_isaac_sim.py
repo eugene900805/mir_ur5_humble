@@ -122,6 +122,24 @@ parser.add_argument("--solver-position-iterations", type=int, default=32,
                          "each step and cut gripper jitter. (default importer ~4)")
 parser.add_argument("--solver-velocity-iterations", type=int, default=4,
                     help="PhysX articulation solver velocity-iteration count.")
+parser.add_argument("--max-depenetration-velocity", type=float, default=0.0,
+                    help="Cap (m/s) on how fast PhysX may push the robot's bodies "
+                         "back out of geometry they have penetrated. 0.0 (default) "
+                         "leaves it unlimited. "
+                         "EXPERIMENTAL, and off by default for a reason: it was "
+                         "added to stop Nav2 wedging the base into a wall corner "
+                         "and PhysX then ejecting it out of the map in one step "
+                         "(seen at the maze's 0.93 m gap: z 0.001 -> 2.1 m, "
+                         "y 3.8 -> 20.7 m in 0.5 s, which takes AMCL with it). "
+                         "At 1.0 it does prevent that, but it causes a WORSE "
+                         "failure: with depenetration throttled the constraint "
+                         "error accumulates until the solver diverges, and the "
+                         "robot explodes from a standstill (measured: rest at "
+                         "(-0.08,-0.30) -> 53 m away in one 0.43 s step, then "
+                         "runaway to 2088 m and NaN). If you want to experiment, "
+                         "try values >= 5.0; the real fix for the wedging is "
+                         "ObstaclesCritic.consider_footprint: true on the Nav2 "
+                         "side, which stops the base entering the corner at all.")
 parser.add_argument("--keep-self-collisions", action="store_true",
                     help="Keep intra-robot self-collisions enabled. By default "
                          "they are DISABLED, because the Robotiq fingers grazing "
@@ -132,9 +150,15 @@ parser.add_argument("--wheel-test", action="store_true",
                     help="Diagnostic: spin the drive wheels directly via the "
                          "articulation API at startup and report rotation, to "
                          "isolate drive vs OmniGraph controller faults.")
-parser.add_argument("--publish-odom", action="store_true",
-                    help="Publish odom->base_footprint TF + odometry from Isaac "
-                         "(otherwise the diff_drive_controller provides odom).")
+parser.add_argument("--publish-odom", action=argparse.BooleanOptionalAction,
+                    default=True,
+                    help="Publish odom->base_footprint TF + ground-truth "
+                         "odometry from Isaac. ON by default, and it has to be: "
+                         "the ROS side runs with enable_odom_tf=false "
+                         "(diffdrive_controller_isaac.yaml), so with this off "
+                         "NOTHING broadcasts odom->base_footprint and Nav2/AMCL "
+                         "have no TF chain to the robot. Use --no-publish-odom "
+                         "only together with enable_odom_tf:=true.")
 parser.add_argument("--base-frame", default="base_footprint")
 parser.add_argument("--odom-frame", default="odom")
 parser.add_argument("--no-imu", action="store_true",
@@ -306,6 +330,61 @@ if _root_prim and _root_prim.IsValid():
 else:
     carb.log_warn("[mir_isaac_sim] could not resolve articulation root prim "
                   "for self-collision / solver tuning")
+
+
+# ------------------------------ depenetration clamp -------------------------
+# Nav2 will occasionally wedge the base against a wall corner (the maze's 0.93 m
+# gap is the reliable spot) and keep commanding into it while the progress
+# checker counts down. PhysX lets the penetration build up and then resolves it
+# in a single step at an unbounded velocity — the robot is fired out of the map
+# and every downstream consumer (AMCL, the costmaps) goes with it. Clamping the
+# depenetration velocity turns that catastrophic ejection into a slow push-out
+# the controller can recover from. Applies to every rigid body in the robot,
+# since any link can be the one in contact.
+# Two-phase on purpose:
+#   * BEFORE play() we only apply the schema and author a permissive value.
+#     Applying an API schema while the sim is playing re-parses the physics
+#     scene mid-step and segfaults Isaac, so the schema has to exist up front.
+#   * The real clamp is set AFTER the startup arm-home teleport has settled.
+#     set_joint_positions() is instantaneous and leaves transient penetrations
+#     that PhysX needs full speed to resolve; clamped from the start, those
+#     penetrations persist and the contact forces flip the base within ~50 s of
+#     sim time (measured: 212/308 samples tipped, vs 0/308 unclamped).
+#     Writing a new *value* to an existing attribute mid-run is safe.
+_DEPEN_ATTRS = []
+UNCLAMPED_DEPENETRATION = 1.0e6   # PhysX default is effectively unlimited
+
+
+def init_depenetration_attrs():
+    for prim in stage_handle.Traverse():
+        if not prim.GetPath().pathString.startswith(ROBOT_PRIM_PATH):
+            continue
+        if not prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            continue
+        try:
+            api = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
+            attr = api.CreateMaxDepenetrationVelocityAttr()
+        except Exception:  # noqa: BLE001 — fall back to the raw attribute
+            attr = prim.CreateAttribute("physxRigidBody:maxDepenetrationVelocity",
+                                        Sdf.ValueTypeNames.Float)
+        attr.Set(float(UNCLAMPED_DEPENETRATION))
+        _DEPEN_ATTRS.append(attr)
+
+
+def set_max_depenetration_velocity(v):
+    if v <= 0.0:
+        print("[mir_isaac_sim] depenetration clamp disabled", flush=True)
+        return
+    for attr in _DEPEN_ATTRS:
+        attr.Set(float(v))
+    # print, not carb.log_warn: post-play carb messages do not reach stdout.
+    # Read one back so the line is proof the value took, not just that we asked.
+    back = _DEPEN_ATTRS[0].Get() if _DEPEN_ATTRS else None
+    print(f"[mir_isaac_sim] max depenetration velocity {v} m/s -> "
+          f"{len(_DEPEN_ATTRS)} rigid bodies (readback {back})", flush=True)
+
+
+init_depenetration_attrs()
 
 
 # ------------------------------ gripper armature ----------------------------
@@ -768,6 +847,37 @@ def unblock_lidar_self_collision(laser_links):
     return disabled
 
 
+def add_lidar_safe_chassis_collider():
+    """Restore the MiR footprint collision below the horizontal lidar plane.
+
+    The imported chassis mesh surrounds both SICK origins, so PhysX ray casts
+    see the robot itself.  ``unblock_lidar_self_collision`` therefore disables
+    that mesh collider.  Leaving it at that makes the casters and drive wheels
+    the first parts to hit a wall; if Nav2 keeps pushing at a narrow entrance,
+    those small curved contacts can wedge the articulation and PhysX can eject
+    it.  A low box supplies the same 0.89 x 0.58 m XY footprint as Nav2/Gazebo,
+    while its 0.14 m top remains safely below the lidar plane at z=0.1914 m.
+    """
+    base = find_prim("base_link")
+    if base is None:
+        carb.log_warn("[mir_isaac_sim] chassis proxy skipped: base_link not found")
+        return None
+    path = base.GetPath().AppendChild("lidar_safe_chassis_collision")
+    cube = UsdGeom.Cube.Define(stage_handle, path)
+    cube.CreateSizeAttr(2.0)
+    xf = UsdGeom.XformCommonAPI(cube.GetPrim())
+    # Nav2 footprint: x=-0.39..0.50, y=-0.29..0.29.  Keep the bottom 2 cm
+    # above the floor so this bumper cannot add ground drag.
+    xf.SetTranslate(Gf.Vec3d(0.055, 0.0, 0.08))
+    xf.SetScale(Gf.Vec3f(0.445, 0.29, 0.06))
+    cube.CreateVisibilityAttr(UsdGeom.Tokens.invisible)
+    UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+    carb.log_warn("[mir_isaac_sim] chassis collision proxy: "
+                  "x=-0.39..0.50 y=-0.29..0.29 z=0.02..0.14 "
+                  "(below lidar z=0.1914)")
+    return cube.GetPrim()
+
+
 sensor_nodes, sensor_connect, sensor_set = [], [], []
 
 # ---------------------------------------------------------- 2x SICK S300 lidars
@@ -779,8 +889,15 @@ sensor_nodes, sensor_connect, sensor_set = [], [], []
 #   link frame already matches the URDF.
 LIDARS = []
 if not args.no_lasers and not args.rtx_lasers:
-    # PhysX (physics ray-cast) lidar. Pure-OmniGraph, no render product, no SDG
-    # gate — works headless. SICK S300: 0.05–29 m, ±120° (240° FOV), 541 rays.
+    # PhysX (physics ray-cast) lidar. Pure-OmniGraph, no render product or SDG
+    # pipeline — works headless. SICK S300: 0.05–29 m, ±120° (240° FOV), 541 rays.
+    #
+    # OnPlaybackTick runs at the 60 Hz simulation rate.  Publishing every tick
+    # used to make /f_scan, /b_scan and the merged /scan run at ~50-60 Hz,
+    # unlike the Gazebo SICK plugin's 12.5 Hz.  Besides being an inaccurate
+    # sensor model, that needlessly loads AMCL, both costmaps and MPPI at the
+    # maze's narrow entrance.  A five-tick simulation gate produces 12 Hz,
+    # which is the closest integer divisor of 60 Hz to Gazebo's 12.5 Hz.
     #
     # max_range = 30.0 (NOT 29.0) on purpose: the PhysX RangeSensor returns its
     # max_range for a NO-HIT beam (GenericSensor.h: `linearDepth=maxDepth`), so a
@@ -802,7 +919,18 @@ if not args.no_lasers and not args.rtx_lasers:
     _laser_links = [lk for lk in (find_prim("front_laser_link"),
                                   find_prim("back_laser_link")) if lk is not None]
     if _laser_links:
-        unblock_lidar_self_collision(_laser_links)
+        _disabled_chassis = unblock_lidar_self_collision(_laser_links)
+        if _disabled_chassis:
+            add_lidar_safe_chassis_collider()
+    sensor_nodes += [
+        ("PhysXLidarGate", "isaacsim.core.nodes.IsaacSimulationGate"),
+    ]
+    sensor_connect += [
+        ("OnPlaybackTick.outputs:tick", "PhysXLidarGate.inputs:execIn"),
+    ]
+    sensor_set += [
+        ("PhysXLidarGate.inputs:step", 5),
+    ]
     for idx, (link, topic) in enumerate((("front_laser_link", "f_scan"),
                                          ("back_laser_link", "b_scan"))):
         parent = find_prim(link)
@@ -829,7 +957,7 @@ if not args.no_lasers and not args.rtx_lasers:
             (pub, "isaacsim.ros2.bridge.ROS2PublishLaserScan"),
         ]
         sensor_connect += [
-            ("OnPlaybackTick.outputs:tick", f"{rd}.inputs:execIn"),
+            ("PhysXLidarGate.outputs:execOut", f"{rd}.inputs:execIn"),
             (f"{rd}.outputs:execOut", f"{pub}.inputs:execIn"),
             ("ContextSensors.outputs:context", f"{pub}.inputs:context"),
             ("ReadSimTimeSensors.outputs:simulationTime", f"{pub}.inputs:timeStamp"),
@@ -850,6 +978,8 @@ if not args.no_lasers and not args.rtx_lasers:
         ]
         LIDARS.append((topic, link, lidar_path))
         carb.log_warn(f"[mir_isaac_sim] PhysX lidar -> /{topic} (frame {link})")
+    carb.log_warn("[mir_isaac_sim] PhysX lidar publish gate: 60 Hz / 5 = 12 Hz "
+                  "(Gazebo SICK update_rate: 12.5 Hz)")
 
 # ----------------------------------------- 2x SICK S300 RTX lidars (--rtx-lasers)
 # Uses IsaacSensorCreateRtxLidar with the SICK_S300 JSON profile, then publishes
@@ -1107,6 +1237,11 @@ if not args.no_arm_home:
         carb.log_warn("[mir_isaac_sim] arm teleported to home pose")
     except Exception as e:  # noqa: BLE001
         carb.log_warn(f"[mir_isaac_sim] arm home init skipped: {e}")
+
+# Now that the teleport's transient penetrations have been resolved at full
+# speed, clamp depenetration for the rest of the run. See the function's
+# definition for why this protects against Nav2 wedging the base into a corner.
+set_max_depenetration_velocity(args.max_depenetration_velocity)
 
 # DIAGNOSTIC: drive the wheels directly through the articulation API (the same
 # path the arm-home teleport uses, which is known to work) to isolate whether a

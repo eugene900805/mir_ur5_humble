@@ -36,9 +36,10 @@ diff_cont:
     # Gazebo: the diff_drive controller is the ONLY source of odom->base_footprint
     # (mir_gazebo's launch does not start the EKF), so this MUST be true or Nav2
     # has no TF chain to base and the robot won't move after 2D Pose Estimate.
-    # Isaac uses a SEPARATE file (diffdrive_controller_isaac.yaml) with this set
-    # to false, because the Isaac bridge publishes odom->base via --publish-odom
-    # and two broadcasters of the same TF fight.
+    # Isaac loads THIS file too and then overrides just this line to false from
+    # diffdrive_controller_isaac.yaml, because the Isaac bridge publishes
+    # odom->base itself and two broadcasters of the same TF fight. Everything
+    # else below is shared by both simulators -- edit it here, once.
     enable_odom_tf: true
 
     # Wheel separation and diameter. These are both optional.

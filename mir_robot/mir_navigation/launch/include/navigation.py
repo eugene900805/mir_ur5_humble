@@ -26,9 +26,33 @@ from launch_ros.descriptions import ComposableNode
 from nav2_common.launch import RewrittenYaml
 
 
+def _speed_defaults_from_yaml(params_path):
+    """Read the speed ceilings out of mir_nav_params.yaml.
+
+    The max_vel_x / max_vel_theta launch arguments are applied through
+    RewrittenYaml, which ALWAYS substitutes -- so whatever their defaults are
+    becomes the effective limit, overriding the yaml. Hard-coding them here
+    would give the platform's top speed two sources of truth that drift apart
+    (exactly how the Isaac controller config drifted from the Gazebo one).
+    So the defaults are read back out of the yaml: one source of truth, and the
+    launch argument only does something when the caller actually passes it.
+    """
+    fallback = ('0.8', '1.0')
+    try:
+        import yaml
+        with open(params_path) as fh:
+            cfg = yaml.safe_load(fh)
+        mppi = cfg['controller_server']['ros__parameters']['FollowPath']
+        return str(mppi['vx_max']), str(mppi['wz_max'])
+    except Exception:  # noqa: BLE001 -- a malformed yaml is nav2's error to report
+        return fallback
+
+
 def generate_launch_description():
     # Get the launch directory
     mir_nav_dir = get_package_share_directory('mir_navigation')
+    default_max_vel_x, default_max_vel_theta = _speed_defaults_from_yaml(
+        os.path.join(mir_nav_dir, 'config', 'mir_nav_params.yaml'))
 
     namespace = LaunchConfiguration('namespace')
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -77,11 +101,26 @@ def generate_launch_description():
         'autostart': autostart,
         'default_nav_to_pose_bt_xml': default_nav_to_pose_bt_xml,
         'default_nav_through_poses_bt_xml': default_nav_through_pose_bt_xml,
-        # speed limits (defaults keep the yaml values; real-robot launch
-        # passes gentler ones). max_speed_xy follows max_vel_x.
+        # Speed limits (defaults keep the yaml values; the real-robot launch
+        # passes gentler ones).
+        #
+        # These have to be spelled in BOTH the DWB and the MPPI vocabulary.
+        # RewrittenYaml only replaces keys that actually occur in the source
+        # yaml, so when the local planner switched from DWB to MPPI the
+        # DWB-only names below silently stopped matching anything: passing
+        # max_vel_x:=0.3 changed NOTHING, and mir_nav_launch.py's gentle
+        # real-robot default was not being applied to the physical MiR100 at
+        # all -- it kept running at MPPI's vx_max. Verified with
+        #   ros2 param get /controller_server FollowPath.max_vel_x
+        # which answered "Parameter not set".
+        # Keep both sets here so either planner can be swapped back in.
+        # DWB names (only match while the DWB block is the active one):
         'max_vel_x': max_vel_x,
         'max_speed_xy': max_vel_x,
-        'max_vel_theta': max_vel_theta
+        'max_vel_theta': max_vel_theta,
+        # MPPI names (the current planner):
+        'vx_max': max_vel_x,
+        'wz_max': max_vel_theta,
     }
 
     configured_params = RewrittenYaml(
@@ -113,12 +152,16 @@ def generate_launch_description():
         description='Automatically startup the nav2 stack')
 
     declare_max_vel_x_cmd = DeclareLaunchArgument(
-        'max_vel_x', default_value='0.8',
-        description='Max linear speed [m/s] (rewrites max_vel_x/max_speed_xy in params)')
+        'max_vel_x', default_value=default_max_vel_x,
+        description='Max linear speed [m/s]. Default is read from '
+                    'mir_nav_params.yaml (FollowPath.vx_max) so the yaml stays '
+                    'the single source of truth; pass this only to override.')
 
     declare_max_vel_theta_cmd = DeclareLaunchArgument(
-        'max_vel_theta', default_value='1.0',
-        description='Max angular speed [rad/s] (rewrites max_vel_theta in params)')
+        'max_vel_theta', default_value=default_max_vel_theta,
+        description='Max angular speed [rad/s]. Default is read from '
+                    'mir_nav_params.yaml (FollowPath.wz_max); pass this only '
+                    'to override.')
 
     declare_use_composition_cmd = DeclareLaunchArgument(
         'use_composition', default_value='False',
