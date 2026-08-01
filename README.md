@@ -32,15 +32,10 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-The commands below use `ROS_DOMAIN_ID=94` to isolate this system from other ROS
-nodes on the same network. If you change the number, **Isaac and every ROS
-terminal must use the same ID**.
-
 ### 1. Terminal 1: start the Isaac GUI and the maze
 
 ```bash
-env ROS_DOMAIN_ID=94 \
-  /home/shareduser/anaconda3/envs/env_isaaclab_opt/bin/python \
+/home/shareduser/anaconda3/envs/env_isaaclab_opt/bin/python \
   /mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim/mir_isaac_sim.py \
   --lasers \
   --world /mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim/usd/maze.usd \
@@ -57,7 +52,6 @@ mid-run, the three ROS launches below must be restarted with it.
 cd /mnt/data/mir_isaac
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-export ROS_DOMAIN_ID=94
 
 ros2 launch mir_description mir_isaac.launch.py launch_moveit:=false
 ```
@@ -72,7 +66,6 @@ want to move the UR5 arm, just drop `launch_moveit:=false`.
 cd /mnt/data/mir_isaac
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-export ROS_DOMAIN_ID=94
 
 ros2 launch mir_navigation amcl.py use_sim_time:=true \
   map:=/mnt/data/mir_isaac/src/mir_ur5_humble/mir_robot/mir_navigation/maps/maze.yaml
@@ -84,7 +77,6 @@ ros2 launch mir_navigation amcl.py use_sim_time:=true \
 cd /mnt/data/mir_isaac
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-export ROS_DOMAIN_ID=94
 
 ros2 launch mir_navigation navigation.py use_sim_time:=true \
   cmd_vel_w_prefix:=/diff_cont/cmd_vel_unstamped
@@ -167,7 +159,6 @@ Run this first in every terminal:
 cd /mnt/data/mir_isaac
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-export ROS_DOMAIN_ID=94
 ```
 
 ### Navigating with an existing map
