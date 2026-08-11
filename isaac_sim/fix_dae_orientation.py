@@ -6,11 +6,14 @@ Each .dae visual gets a 'Scene' Xform with orient = Rx(-90) = (-0.7071,0.7071,0,
 The correct orientation (matching the collision .stl) is Rx(+90) = (0.7071,0.7071,0,0).
 We flip it in the base USD layer.
 """
+import os
 import sys
 from pxr import Usd, Gf
 
-# pass the base USD path, e.g. usd_mimic/configuration/mir_ur5_base.usd
-BASE = sys.argv[1] if len(sys.argv) > 1 else "/mnt/data/mir_ur5/usd_mimic/configuration/mir_ur5_base.usd"
+# pass the base USD path; defaults to this checkout's usd/configuration/ layer
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_BASE = os.path.join(_HERE, "usd", "configuration", "mir_isaac_base.usd")
+BASE = sys.argv[1] if len(sys.argv) > 1 else _DEFAULT_BASE
 GOOD = Gf.Quatf(0.70710677, 0.70710677, 0.0, 0.0)   # Rx(+90)
 
 stage = Usd.Stage.Open(BASE)

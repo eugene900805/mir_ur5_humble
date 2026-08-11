@@ -17,6 +17,24 @@ configuration.
 | Change the USD, the sensors or the physics parameters | [`isaac_sim/README_isaac.md`](isaac_sim/README_isaac.md) |
 | Look up known Isaac / Nav2 issues and measured results | [`isaac_debug.md`](isaac_debug.md) |
 
+## Paths used in this README
+
+Every command below is written against three variables instead of absolute
+paths. Set them once (add them to `~/.bashrc`) and the rest of the document
+works unchanged on any machine:
+
+```bash
+export MIR_WS=~/ros2_ws                                  # colcon workspace (holds src/ and install/)
+export MIR_REPO=$MIR_WS/src/mir_ur5_humble               # this repository
+export ISAAC_PYTHON=~/IsaacSim/_build/linux-x86_64/release/python.sh
+```
+
+`ISAAC_PYTHON` must be an interpreter that can `import omni` / `pxr` — either
+Isaac Sim's own `python.sh` from your build, or a conda env with Isaac Sim
+installed. It is only needed for the Isaac path; Gazebo and the real robot
+ignore it. Everything else (maps, RViz configs, MoveIt configs) is resolved
+through `ros2 pkg prefix`, so it needs no path of its own.
+
 ## Quick start: Isaac Sim maze navigation (GUI)
 
 This is the currently verified startup path, and the one that behaves closest
@@ -26,7 +44,7 @@ makes it easiest to tell which layer is at fault when something breaks.
 ### 0. Build first (on first use, or after changing code)
 
 ```bash
-cd /mnt/data/mir_isaac
+cd $MIR_WS
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install
 source install/setup.bash
@@ -35,10 +53,9 @@ source install/setup.bash
 ### 1. Terminal 1: start the Isaac GUI and the maze
 
 ```bash
-/home/shareduser/anaconda3/envs/env_isaaclab_opt/bin/python \
-  /mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim/mir_isaac_sim.py \
+"$ISAAC_PYTHON" "$MIR_REPO/isaac_sim/mir_isaac_sim.py" \
   --lasers \
-  --world /mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim/usd/maze.usd \
+  --world "$MIR_REPO/isaac_sim/usd/maze.usd" \
   --top-down
 ```
 
@@ -49,7 +66,7 @@ mid-run, the three ROS launches below must be restarted with it.
 ### 2. Terminal 2: ROS Control, RViz and the dual-laser merger
 
 ```bash
-cd /mnt/data/mir_isaac
+cd $MIR_WS
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
@@ -63,18 +80,18 @@ want to move the UR5 arm, just drop `launch_moveit:=false`.
 ### 3. Terminal 3: localize against the existing maze map
 
 ```bash
-cd /mnt/data/mir_isaac
+cd $MIR_WS
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
 ros2 launch mir_navigation amcl.py use_sim_time:=true \
-  map:=/mnt/data/mir_isaac/src/mir_ur5_humble/mir_robot/mir_navigation/maps/maze.yaml
+  map:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/maps/maze.yaml
 ```
 
 ### 4. Terminal 4: start Nav2
 
 ```bash
-cd /mnt/data/mir_isaac
+cd $MIR_WS
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
@@ -123,18 +140,34 @@ sudo apt install ros-humble-gripper-controllers
 sudo apt install ros-humble-rmw-cyclonedds-cpp
 sudo apt install ros-humble-sensor-msgs
 ```
+
+For the Isaac Sim back-end and the Nav2 stack also install:
+
+```
+sudo apt install ros-humble-topic-based-ros2-control
+sudo apt install ros-humble-navigation2 ros-humble-nav2-bringup ros-humble-slam-toolbox
+sudo apt install ros-humble-pcl-ros ros-humble-pcl-conversions
+```
+
 ## Source install
+
+`MIR_WS` / `MIR_REPO` are the variables from
+[Paths used in this README](#paths-used-in-this-readme) — pick your own
+workspace location here and the rest of the document follows it.
+
 ```
 # create a ros2 workspace
-mkdir -p ~/ros2_ws/src
-cd ~/ros2_ws/
+export MIR_WS=~/ros2_ws
+mkdir -p $MIR_WS/src
+cd $MIR_WS
 
-# clone mir_robot into the ros2 workspace
-git clone https://github.com/eugene900805/mir_ur5_humble.git src/mir_robot
+# clone this repository into the workspace
+git clone https://github.com/eugene900805/mir_ur5_humble.git src/mir_ur5_humble
+export MIR_REPO=$MIR_WS/src/mir_ur5_humble
 
 # use vcs to fetch linked repos
 # $ sudo apt install python3-vcstool
-vcs import < src/mir_robot/mir_robot/ros2.repos src --recursive
+vcs import < $MIR_REPO/mir_robot/ros2.repos src --recursive
 
 # use rosdep to install all dependencies (including ROS itself)
 sudo apt update
@@ -144,11 +177,11 @@ rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
 
 # build all packages in the workspace
 echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
-echo "source ~/ros2_ws/install/setup.bash" >> ~/.bashrc
+echo "source $MIR_WS/install/setup.bash" >> ~/.bashrc
 echo ". /usr/share/gazebo/setup.sh" >> ~/.bashrc
 source ~/.bashrc
-cd ~/ros2_ws
-colcon build
+cd $MIR_WS
+colcon build --symlink-install
 ```
 
 # Gazebo demo
@@ -156,7 +189,7 @@ colcon build
 Run this first in every terminal:
 
 ```bash
-cd /mnt/data/mir_isaac
+cd $MIR_WS
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 ```
@@ -217,7 +250,9 @@ ros2 launch mir_description mir_isaac.launch.py \
 ```
 
 This takes fewer commands; when you need to watch the Isaac and ROS output
-separately, the 4-terminal flow above is still recommended.
+separately, the 4-terminal flow above is still recommended. `launch_isaac:=true`
+is the only mode that needs `ISAAC_PYTHON` to be exported — it starts
+`mir_isaac_sim.py` itself.
 
 ### Switching to SLAM mapping
 
@@ -253,20 +288,23 @@ keeps the two simulators' settings from drifting apart.
 > all symptoms → root causes → fixes, in Chinese) are in
 > **[`claude_debug.md`](claude_debug.md)**.
 
-Device addresses depend on which WiFi the PC is on (UR5 control box is
-`192.168.0.101` on both):
+The MiR's address depends on which WiFi the PC is on, so don't hardcode it —
+auto-detect it (tries `mir.com`, then known addresses, then scans the subnet
+for rosbridge port 9090):
+
+```
+export MIR_HOST=$($MIR_REPO/tools/find_mir.sh)
+ros2 launch mir_navigation mir_nav_launch.py mir_hostname:=$MIR_HOST
+```
+
+The two cases the script covers, with our lab's values as an example — yours
+will differ, and the UR5 control box has its own fixed address on the same
+subnet (`192.168.0.101` here, set it as `UR_HOST`):
 
 | WiFi network | MiR address | Note |
 |---|---|---|
-| `Aislab_mir3` (MiR's own hotspot) | `192.168.12.20` | the robot's DNS resolves `mir.com` to itself |
-| `TP-Link_550F_5G` (lab router) | `192.168.0.104` | MiR joins as a WiFi client |
-
-Don't guess — auto-detect (tries `mir.com`, known addresses, then scans the
-subnet for rosbridge port 9090):
-
-```
-ros2 launch mir_navigation mir_nav_launch.py mir_hostname:=$(./src/mir_robot/tools/find_mir.sh)
-```
+| MiR's own hotspot | `192.168.12.20` | the robot's DNS resolves `mir.com` to itself |
+| a lab router the MiR joins as a client | DHCP, e.g. `192.168.0.104` | found by the subnet scan |
 
 The PC's own IP never needs to be typed anywhere: the UR driver auto-detects
 its reverse-connection IP (headless mode) and the MiR bridge connects outward.
@@ -277,12 +315,13 @@ power-save on the **new** connection profile
 down/up) — power-save causes the periodic outages that break External Control.
 
 Run each block in its own terminal; every terminal needs
-`cd <workspace> && source install/setup.bash` first (system python, **not** conda).
+`cd $MIR_WS && source install/setup.bash` first (system python, **not** conda),
+plus the `UR_HOST` / `MIR_HOST` from above.
 
 ```
 ### Terminal 1 — UR5 driver (headless External Control, no teach pendant needed)
 ros2 launch ur_robot_driver ur_control.launch.py \
-    ur_type:=ur5 robot_ip:=192.168.0.101 tf_prefix:=ur_ \
+    ur_type:=ur5 robot_ip:=$UR_HOST tf_prefix:=ur_ \
     launch_rviz:=false launch_rsp:=false headless_mode:=true \
     initial_joint_controller:=passthrough_trajectory_controller \
     activate_joint_controller:=true controller_spawner_timeout:=60
@@ -292,7 +331,7 @@ ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur5 prefix:=ur_ launch
 
 ### Terminal 3 — MiR navigation (bridge + Nav2 + RViz, shares the robot's own
 ###              localization/map with the MiR web UI -> no 2D Pose Estimate needed)
-ros2 launch mir_navigation mir_nav_launch.py mir_hostname:=192.168.0.104
+ros2 launch mir_navigation mir_nav_launch.py mir_hostname:=$MIR_HOST
 
 ### Terminal 4 — laser scan merger (required; QoS flags matter on hardware)
 ros2 launch mir_description mir_isaac_scan_merger.launch.py use_sim_time:=false best_effort:=true
@@ -310,10 +349,10 @@ Key points (details in `claude_debug.md`):
   played. If the script stops, resend with
   `ros2 service call /io_and_status_controller/resend_robot_program std_srvs/srv/Trigger`
   (takes ~6 s). Occasional drops are caused by an **unstable router/WiFi** —
-  if your network is solid you can ignore this entirely. On a flaky link (e.g.
-  our 2.4 GHz `Aislab_mir3` hotspot drops every ~10-15 min even at the 5 s
-  watchdog maximum) keep `tools/ur_program_watchdog.sh` running in a 5th
-  terminal; it auto-resends within seconds.
+  if your network is solid you can ignore this entirely. On a flaky link (our
+  2.4 GHz MiR hotspot drops every ~10-15 min even at the 5 s watchdog maximum)
+  keep `$MIR_REPO/tools/ur_program_watchdog.sh` running in a 5th terminal; it
+  auto-resends within seconds.
 - `initial_joint_controller` selects the trajectory controller:
   `passthrough_trajectory_controller` (whole trajectory interpolated on the
   robot — smooth over WiFi, default) vs `scaled_joint_trajectory_controller`
@@ -334,27 +373,31 @@ Key points (details in `claude_debug.md`):
   (`unknown goal response`):
   `pkill -f mir_nav_launch.py; pkill -f mir_launch.py; pkill -f twist_stamper; pkill -f teleop_twist_keyboard; pkill xterm`
 
-# Running on another machine (paths to change)
+# Running on another machine
 
-This tree was set up with the workspace at `/mnt/data/mir_isaac` and Isaac Sim at
-`/mnt/data/IsaacSim`. On a different machine, adjust these machine-specific paths:
+Setting `MIR_WS`, `MIR_REPO` and `ISAAC_PYTHON`
+([above](#paths-used-in-this-readme)) covers every command in this README. No
+absolute path is baked into the launch files:
 
-| What | Hardcoded value | Where | Fix |
-|---|---|---|---|
-| Isaac Sim install | `/mnt/data/IsaacSim/_build/linux-x86_64/release/python.sh` | Terminal 1 / docs | point at *your* Isaac build's `python.sh` |
-| Workspace root | `/mnt/data/mir_isaac` | run commands | use your own ws (the install section above uses `~/ros2_ws`) |
-| `isaac_python` arg | `/home/shareduser/anaconda3/envs/env_isaaclab_opt/bin/python` | `mir_description/launch/mir_isaac.launch.py` (~line 98) | a python that has Isaac / `pxr`; override `isaac_python:=...` (only used when `launch_isaac:=true`) |
-| `isaac_dir` arg | `/mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim` | `mir_isaac.launch.py` | override `isaac_dir:=...` (only when `launch_isaac:=true`) |
+| Launch arg | Where its default comes from |
+|---|---|
+| `isaac_python` | `$ISAAC_PYTHON`; the launch aborts with a clear message if it is unset |
+| `isaac_dir` | `$MIR_ISAAC_DIR`, else `isaac_sim/` is derived from the launch file's own location in this checkout |
+
+Both are only read when `launch_isaac:=true`; the 4-terminal quick start starts
+Isaac itself and never touches them. The `isaac_dir` derivation needs the
+`--symlink-install` build used throughout this README (a plain copying build
+breaks the link back to the source tree — then pass `isaac_dir:=` explicitly).
 
 Other portability notes:
 - `mir_isaac_sim.py` is meant to be run directly; its `--usd` default is computed
-  relative to the script, so it is path-independent. The `/mnt/data/...` lines in
-  its header are example comments only.
+  relative to the script, so it is path-independent. Only `--world` takes a full
+  path.
 - Run the script with **Isaac's own python** (`python.sh`) or an env that can
   import `omni.*` / `pxr`; plain system python cannot load the Isaac modules.
-- Isaac's shipped lidar-config dir may contain a symlink to a non-existent
-  `/home/shareduser/IsaacSim`; this only affects *custom RTX* lidar profiles —
-  the default PhysX `--lasers` path is unaffected.
+- Isaac's shipped lidar-config dir may contain a symlink to an Isaac Sim
+  location that does not exist on your machine; this only affects *custom RTX*
+  lidar profiles — the default PhysX `--lasers` path is unaffected.
 - After editing any `mir_description/config/*.yaml` or launch file, rebuild
   (`colcon build --packages-select mir_description`) so the `install/` copy used
   at runtime is refreshed (or edit the `install/` copy too).

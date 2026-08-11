@@ -43,6 +43,25 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
+def default_isaac_dir():
+    """Locate <repo>/isaac_sim without hardcoding a machine-specific path.
+
+    $MIR_ISAAC_DIR wins if set. Otherwise derive it from this file's real
+    location: <repo>/mir_robot/mir_description/launch/mir_isaac.launch.py ->
+    <repo>/isaac_sim. With `colcon build --symlink-install` the installed copy
+    is a symlink into the source tree, so realpath() lands in the repo either
+    way; with a plain (copying) build it does not, hence the isdir() check.
+    Returns "" when it cannot be found, so `isaac_dir:=` must be passed.
+    """
+    env = os.environ.get("MIR_ISAAC_DIR")
+    if env:
+        return env
+    launch_dir = os.path.dirname(os.path.realpath(__file__))
+    repo = os.path.abspath(os.path.join(launch_dir, "..", "..", ".."))
+    candidate = os.path.join(repo, "isaac_sim")
+    return candidate if os.path.isdir(candidate) else ""
+
+
 def load_yaml(package_name, file_path):
     package_path = get_package_share_directory(package_name)
     absolute_file_path = os.path.join(package_path, file_path)
@@ -95,12 +114,17 @@ def generate_launch_description():
                         "matching the Gazebo workflow)."),
         DeclareLaunchArgument(
             "isaac_python",
-            default_value="/home/shareduser/anaconda3/envs/env_isaaclab_opt/bin/python",
-            description="Python interpreter that has isaacsim installed."),
+            default_value=os.environ.get("ISAAC_PYTHON", ""),
+            description="Python interpreter that can import isaacsim/omni "
+                        "(Isaac Sim's python.sh, or an Isaac Sim conda env). "
+                        "Defaults to $ISAAC_PYTHON; only used with "
+                        "launch_isaac:=true."),
         DeclareLaunchArgument(
             "isaac_dir",
-            default_value="/mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim",
-            description="Directory containing mir_isaac_sim.py and usd/."),
+            default_value=default_isaac_dir(),
+            description="Directory containing mir_isaac_sim.py and usd/. "
+                        "Defaults to $MIR_ISAAC_DIR, else the isaac_sim/ dir of "
+                        "this checkout; only used with launch_isaac:=true."),
     ]
     for a in declared_args:
         ld.add_action(a)
@@ -114,6 +138,14 @@ def generate_launch_description():
             return []
         py = context.launch_configurations["isaac_python"]
         idir = context.launch_configurations["isaac_dir"]
+        if not py:
+            raise RuntimeError(
+                "launch_isaac:=true needs an Isaac Sim python. Set $ISAAC_PYTHON "
+                "(e.g. <isaac-sim>/python.sh) or pass isaac_python:=<path>.")
+        if not idir:
+            raise RuntimeError(
+                "launch_isaac:=true could not locate the isaac_sim/ directory. "
+                "Set $MIR_ISAAC_DIR or pass isaac_dir:=<repo>/isaac_sim.")
         cmd = [py, os.path.join(idir, "mir_isaac_sim.py"), "--publish-odom"]
         world = context.launch_configurations.get("world", "")
         if world:

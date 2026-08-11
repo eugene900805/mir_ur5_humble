@@ -1,4 +1,6 @@
 """Headless render of the converted USD to a PNG for visual verification."""
+import os
+
 from isaaclab.app import AppLauncher
 
 app_launcher = AppLauncher({"headless": True, "enable_cameras": True})
@@ -9,8 +11,9 @@ import omni.replicator.core as rep
 from pxr import Usd, UsdGeom, Gf
 import omni.usd
 
-USD = "/mnt/data/mir_isaac/mir_ur5_humble/isaac_sim/usd/mir_isaac.usd"
-OUT_DIR = "/mnt/data/mir_isaac/mir_ur5_humble/isaac_sim"
+_HERE = os.path.dirname(os.path.abspath(__file__))
+USD = os.path.join(_HERE, "usd", "mir_isaac.usd")
+OUT_DIR = _HERE
 
 ctx = omni.usd.get_context()
 ctx.open_stage(USD)

@@ -10,12 +10,13 @@
 #   Isaac  --(rosgraph_msgs/Clock)-->     /clock                (use_sim_time)
 #
 # On the ROS side run, in another terminal:
-#   ros2 launch mir_gazebo mir_isaac.launch.py
+#   ros2 launch mir_description mir_isaac.launch.py
 #
-# Run this script with the Isaac Sim python environment, e.g.:
-#   cd /mnt/data/IsaacSim/_build/linux-x86_64/release
-#   ./python.sh /mnt/data/mir_isaac/mir_ur5_humble/isaac_sim/mir_isaac_sim.py \
-#       --usd /mnt/data/mir_isaac/mir_ur5_humble/isaac_sim/usd/mir_isaac.usd
+# Run this script with a python that can import omni/pxr — Isaac Sim's own
+# python.sh from your build, or an Isaac Sim conda env:
+#   <isaac-sim>/python.sh <repo>/isaac_sim/mir_isaac_sim.py
+# --usd defaults to usd/mir_isaac.usd next to this script, so it needs no path.
+# See README_isaac.md.
 
 import argparse
 import os

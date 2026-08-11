@@ -71,15 +71,24 @@ joints), and the caster joints. Articulation root: `/World/Robot/base_footprint`
 
 ## 1. Prerequisites
 
-- Isaac Sim 5.0 built at `/mnt/data/IsaacSim` (provides `python.sh`).
-- Isaac Lab in conda env `env_isaaclab_opt` (only needed to *regenerate* the USD).
+- Isaac Sim 5.0 (source build or binary release — it provides `python.sh`).
+- Isaac Lab, if you want to *regenerate* the USD (a conda env works).
 - ROS 2 Humble with `ros-humble-topic-based-ros2-control`, `ros-humble-moveit`,
   `ros2_control`, `ros2_controllers`.
+
+This document uses the same variables as the top-level
+[README](../README.md#paths-used-in-this-readme):
+
+```bash
+export MIR_WS=~/ros2_ws                                  # colcon workspace
+export MIR_REPO=$MIR_WS/src/mir_ur5_humble               # this repository
+export ISAAC_PYTHON=~/IsaacSim/_build/linux-x86_64/release/python.sh
+```
 
 ## 2. Build the ROS workspace
 
 ```bash
-cd /mnt/data/mir_isaac
+cd $MIR_WS
 # system python for ROS (not the conda one):
 PATH=/usr/bin:/bin:/opt/ros/humble/bin:$PATH PYTHONPATH= \
   colcon build --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
@@ -95,11 +104,15 @@ ur_moveit_config`.)
 A ready-made USD is already at `isaac_sim/usd/mir_isaac.usd`. To rebuild it from
 the xacro (e.g. after changing the robot):
 
+Run these from the repository root, with a python that can import Isaac Lab
+(`$ISAAC_PYTHON` or your Isaac Lab conda env — plain system python won't do):
+
 ```bash
-conda activate env_isaaclab_opt
-cd /mnt/data/mir_isaac
+cd $MIR_REPO
+source $MIR_WS/install/setup.bash          # so ros2 pkg prefix resolves
+
 # 3a. xacro → URDF (Isaac hardware interface selected)
-xacro install/mir_description/share/mir_description/urdf/mir.urdf.xacro \
+xacro $(ros2 pkg prefix mir_description)/share/mir_description/urdf/mir.urdf.xacro \
      sim_isaac:=true sim_gazebo:=false ur_type:=ur5 > isaac_sim/mir_isaac_raw.urdf
 # 3b. make the URDF self-contained & importer-safe
 python isaac_sim/make_isaac_urdf.py isaac_sim/mir_isaac_raw.urdf isaac_sim/mir_isaac.urdf
@@ -124,15 +137,15 @@ simulators drive through identical geometry:
 python isaac_sim/convert_maze_to_usd.py     # mir_gazebo/worlds/include/maze/model.sdf -> usd/maze.usd
 ```
 
-See `../mir_ur5/README.md` for the full background on each fix.
+The background on each of these fixes (why the importer needs them, what breaks
+without them) is in [`../isaac_debug.md`](../isaac_debug.md).
 
 ## 4. Run
 
 **Terminal 1 — Isaac Sim** (publishes `/clock`, `/isaac_joint_states`; subscribes `/isaac_{arm,base,gripper}_commands`):
 
 ```bash
-cd /mnt/data/IsaacSim/_build/linux-x86_64/release
-./python.sh /mnt/data/mir_isaac/src/mir_ur5_humble/isaac_sim/mir_isaac_sim.py
+"$ISAAC_PYTHON" "$MIR_REPO/isaac_sim/mir_isaac_sim.py"
 #   add --headless to run without a GUI
 #   odom→base_footprint + /odom (Isaac ground truth) are published by DEFAULT;
 #   --no-publish-odom turns them off, but then you must also flip the ROS side
@@ -145,12 +158,13 @@ workflow):
 
 ```bash
 ros2 launch mir_description mir_isaac.launch.py launch_isaac:=true world:=maze
+#   picks up $ISAAC_PYTHON; override with isaac_python:=<path> if you prefer
 ```
 
 **Terminal 2 — ROS control + MoveIt + RViz:**
 
 ```bash
-cd /mnt/data/mir_isaac && source install/setup.bash
+cd $MIR_WS && source install/setup.bash
 ros2 launch mir_description mir_isaac.launch.py
 #   launch_moveit:=false  launch_rviz:=false   to drop pieces
 ```
@@ -200,14 +214,16 @@ ros2 action send_goal /gripper_position_controller/gripper_cmd \
 Lidars and the camera are **opt-in**:
 
 ```bash
+SIM="$ISAAC_PYTHON $MIR_REPO/isaac_sim/mir_isaac_sim.py"
+
 # Headless-safe: PhysX lidar (pure ray-cast, no render product)
-python isaac_sim/mir_isaac_sim.py --lasers
+$SIM --lasers
 
 # Physically-based RTX lidar (needs viewport, not headless)
-python isaac_sim/mir_isaac_sim.py --rtx-lasers
+$SIM --rtx-lasers
 
 # Camera (needs viewport)
-python isaac_sim/mir_isaac_sim.py --rtx-lasers --camera
+$SIM --rtx-lasers --camera
 ```
 
 ### Two lidar modes
@@ -303,33 +319,37 @@ One-time setup:
 ```bash
 # scan merger (declared in mir_robot/ros2.repos); needs pcl_ros
 sudo apt install -y ros-humble-pcl-ros ros-humble-pcl-conversions
-git clone https://github.com/relffok/ira_laser_tools.git    # into the ws root
-colcon build --packages-select ira_laser_tools mir_navigation mir_msgs
+git clone https://github.com/relffok/ira_laser_tools.git $MIR_WS/src/ira_laser_tools
+cd $MIR_WS && colcon build --packages-select ira_laser_tools mir_navigation mir_msgs
 # nav runtime deps:
 sudo apt install -y ros-humble-slam-toolbox ros-humble-navigation2 ros-humble-nav2-bringup
 ```
 
-Run order (each in its own terminal, `source install/setup.bash` first):
+Run order (each in its own terminal, `cd $MIR_WS && source install/setup.bash`
+first):
 
 ```bash
 # 1) Isaac with lasers (headless is fine — PhysX lidar)
-python isaac_sim/mir_isaac_sim.py --headless --lasers --world isaac_sim/usd/maze.usd
+"$ISAAC_PYTHON" "$MIR_REPO/isaac_sim/mir_isaac_sim.py" \
+    --headless --lasers --world "$MIR_REPO/isaac_sim/usd/maze.usd"
 
-# 2) control + MoveIt
+# 2) control + MoveIt; this already starts the /f_scan + /b_scan -> /scan merger
+#    (launch_scan_merger defaults to true) — do NOT start a second one
 ros2 launch mir_description mir_isaac.launch.py
 
-# 3) merge the two SICK scans -> /scan
-ros2 launch mir_description mir_isaac_scan_merger.launch.py
-
-# 4a) build a map (SLAM):
+# 3a) build a map (SLAM):
 ros2 launch mir_navigation mapping.py use_sim_time:=true \
     slam_params_file:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/config/mir_mapping_async_sim.yaml
-# 4b) ...or localize against the existing maze map + navigate:
+# 3b) ...or localize against the existing maze map + navigate:
 ros2 launch mir_navigation amcl.py use_sim_time:=true \
     map:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/maps/maze.yaml
 ros2 launch mir_navigation navigation.py use_sim_time:=true \
     cmd_vel_w_prefix:=/diff_cont/cmd_vel_unstamped
 ```
+
+(The merger has its own launch file, `mir_isaac_scan_merger.launch.py`, for the
+cases where the control launch is started with `launch_scan_merger:=false` —
+or on the real robot, where it needs `use_sim_time:=false best_effort:=true`.)
 
 Sanity check before nav: `ros2 topic hz /scan` should be ~12 Hz.
 
