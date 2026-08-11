@@ -1,0 +1,12 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# colcon (when the workspace root is inside this tree)
+build/
+install/
+log/
+
+# editor / OS
+*.swp
+.DS_Store
