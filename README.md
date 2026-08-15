@@ -7,131 +7,39 @@ gripper and a RealSense D435i, and supports Isaac Sim, Gazebo Classic and the
 real robot. Isaac and Gazebo share the same ROS 2 Control, Nav2 and MoveIt2
 configuration.
 
-## Pick what you want to do first
-
-| Goal | Where to start |
-|---|---|
-| Drive the maze in the Isaac GUI and send nav goals from RViz | Follow the 4 terminals in the next section |
-| Map or navigate in Gazebo | [Gazebo demo](#gazebo-demo) |
-| Operate the real MiR100 + UR5 | [Real robot demo](#real-robot-demo-mir100--ur5-hardware) |
-| Change the USD, the sensors or the physics parameters | [`isaac_sim/README_isaac.md`](isaac_sim/README_isaac.md) |
-| Look up known Isaac / Nav2 issues and measured results | [`isaac_debug.md`](isaac_debug.md) |
-
-## Paths used in this README
-
-Every command below is written against three variables instead of absolute
-paths. Set them once (add them to `~/.bashrc`) and the rest of the document
-works unchanged on any machine:
-
-```bash
-export MIR_WS=~/ros2_ws                                  # colcon workspace (holds src/ and install/)
-export MIR_REPO=$MIR_WS/src/mir_ur5_humble               # this repository
-export ISAAC_PYTHON=~/IsaacSim/_build/linux-x86_64/release/python.sh
-```
-
-`ISAAC_PYTHON` must be an interpreter that can `import omni` / `pxr` — either
-Isaac Sim's own `python.sh` from your build, or a conda env with Isaac Sim
-installed. It is only needed for the Isaac path; Gazebo and the real robot
-ignore it. Everything else (maps, RViz configs, MoveIt configs) is resolved
-through `ros2 pkg prefix`, so it needs no path of its own.
-
-## Quick start: Isaac Sim maze navigation (GUI)
-
-This is the currently verified startup path, and the one that behaves closest
-to Gazebo. Isaac, ROS Control, AMCL and Nav2 are started separately, which also
-makes it easiest to tell which layer is at fault when something breaks.
-
-### 0. Build first (on first use, or after changing code)
-
-```bash
-cd $MIR_WS
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install
-source install/setup.bash
-```
-
-### 1. Terminal 1: start the Isaac GUI and the maze
-
-```bash
-"$ISAAC_PYTHON" "$MIR_REPO/isaac_sim/mir_isaac_sim.py" \
-  --lasers \
-  --world "$MIR_REPO/isaac_sim/usd/maze.usd" \
-  --top-down
-```
-
-Wait until Isaac has finished loading and is stepping the simulation before
-opening the other terminals. Isaac is the `/clock` source; if you restart Isaac
-mid-run, the three ROS launches below must be restarted with it.
-
-### 2. Terminal 2: ROS Control, RViz and the dual-laser merger
-
-```bash
-cd $MIR_WS
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-
-ros2 launch mir_description mir_isaac.launch.py launch_moveit:=false
-```
-
-This launch already includes the robot state publisher, ROS Control, RViz and
-`/f_scan + /b_scan -> /scan`; do not start a separate scan merger. If you also
-want to move the UR5 arm, just drop `launch_moveit:=false`.
-
-### 3. Terminal 3: localize against the existing maze map
-
-```bash
-cd $MIR_WS
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-
-ros2 launch mir_navigation amcl.py use_sim_time:=true \
-  map:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/maps/maze.yaml
-```
-
-### 4. Terminal 4: start Nav2
-
-```bash
-cd $MIR_WS
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-
-ros2 launch mir_navigation navigation.py use_sim_time:=true \
-  cmd_vel_w_prefix:=/diff_cont/cmd_vel_unstamped
-```
-
-### 5. Drive it from RViz
-
-1. Use **2D Pose Estimate** to set the base's initial position and heading on
-   the map.
-2. Once the laser scan lines up with the map, drag a goal arrow with
-   **Nav2 Goal**.
-3. The arrow direction is also the final heading. After reaching the goal
-   position the base may turn in place to that heading; navigation is only
-   complete once Nav2 reports `Goal succeeded`.
-
-Quick checks:
-
-```bash
-ros2 topic hz /scan                         # about 12 Hz
-ros2 control list_controllers               # controllers should be active
-ros2 lifecycle get /amcl                    # active
-ros2 lifecycle get /bt_navigator            # active
-```
-
-If a goal is accepted but the base does not move, check `/scan` and AMCL first,
-then confirm Isaac has not been restarted. Measured results for narrow maze
-gaps, turning in place and stress tests are in
-[`isaac_debug.md`](isaac_debug.md).
-
 # Installation
 
-## Preliminaries
-## ROS2
-If you haven't already installed [ROS2](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debians.html) on your PC, you need to add the ROS2 apt repository.
+Follow this README in order: install and build the workspace first, start Isaac
+Sim next, and use the Gazebo workflow afterward if needed.
+
+## Assumed directory and Python environment
+
+All commands assume the repository is installed under `~/ros2_ws/src` and
+Isaac Sim / Isaac Lab is available in the Anaconda environment
+`env_isaaclab`:
+
+```bash
+export MIR_WS=~/ros2_ws
+export MIR_REPO=~/ros2_ws/src/mir_ur5_humble
+export ISAAC_PYTHON=~/anaconda3/envs/env_isaaclab/bin/python
+```
+
+Add these exports to `~/.bashrc` if you want them to be available in every new
+terminal. The `env_isaaclab` environment is used only for the Isaac Sim Python
+process. Build and run the ROS 2, Gazebo and real-robot processes with the
+system ROS environment, not from Conda.
+
+## Prerequisites
+
+### ROS 2
+
+If you haven't already installed
+[ROS 2 Humble](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debians.html)
+on your PC, install it and add the ROS 2 apt repository first.
 
 Also install ros2-control, ros2-controllers, gazebo-ros-pkgs(usually installed), gazebo-ros2-control
 
-```
+```bash
 sudo apt-get install ros-humble-ros2-control
 sudo apt-get install ros-humble-ros2-controllers
 sudo apt-get install ros-humble-gazebo-ros-pkgs
@@ -143,58 +51,201 @@ sudo apt install ros-humble-sensor-msgs
 
 For the Isaac Sim back-end and the Nav2 stack also install:
 
-```
+```bash
 sudo apt install ros-humble-topic-based-ros2-control
 sudo apt install ros-humble-navigation2 ros-humble-nav2-bringup ros-humble-slam-toolbox
 sudo apt install ros-humble-pcl-ros ros-humble-pcl-conversions
 ```
 
-## Source install
+Before continuing, make sure the prepared Anaconda environment exists at
+`~/anaconda3/envs/env_isaaclab` and contains the Isaac Sim / Isaac Lab Python
+packages required by this project.
 
-`MIR_WS` / `MIR_REPO` are the variables from
-[Paths used in this README](#paths-used-in-this-readme) — pick your own
-workspace location here and the rest of the document follows it.
+## Install the source under `ros2_ws/src`
 
-```
-# create a ros2 workspace
-export MIR_WS=~/ros2_ws
-mkdir -p $MIR_WS/src
-cd $MIR_WS
+```bash
+# Create the ROS 2 workspace.
+mkdir -p ~/ros2_ws/src
+cd ~/ros2_ws/src
 
-# clone this repository into the workspace
-git clone https://github.com/eugene900805/mir_ur5_humble.git src/mir_ur5_humble
-export MIR_REPO=$MIR_WS/src/mir_ur5_humble
+# Clone this repository as ~/ros2_ws/src/mir_ur5_humble.
+git clone https://github.com/eugene900805/mir_ur5_humble.git mir_ur5_humble
 
-# use vcs to fetch linked repos
-# $ sudo apt install python3-vcstool
-vcs import < $MIR_REPO/mir_robot/ros2.repos src --recursive
+# Fetch the repositories listed by this project.
+sudo apt install python3-vcstool
+cd ~/ros2_ws
+vcs import src < src/mir_ur5_humble/mir_robot/ros2.repos --recursive
 
-# use rosdep to install all dependencies (including ROS itself)
+# Install package dependencies.
 sudo apt update
 sudo apt install -y python3-rosdep
 rosdep update --rosdistro=humble
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
 
-# build all packages in the workspace
-echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
-echo "source $MIR_WS/install/setup.bash" >> ~/.bashrc
-echo ". /usr/share/gazebo/setup.sh" >> ~/.bashrc
-source ~/.bashrc
-cd $MIR_WS
-colcon build --symlink-install
+# Build with the system Python used by ROS 2. Do not activate Conda here.
+source /opt/ros/humble/setup.bash
+PATH=/usr/bin:/bin:/opt/ros/humble/bin:$PATH PYTHONPATH= \
+  colcon build --symlink-install \
+  --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
+source ~/ros2_ws/install/setup.bash
 ```
 
-# Gazebo demo
-
-Run this first in every terminal:
+Re-run the build after changing source files. Add the following setup commands
+to `~/.bashrc` if desired:
 
 ```bash
-cd $MIR_WS
 source /opt/ros/humble/setup.bash
-source install/setup.bash
+source ~/ros2_ws/install/setup.bash
+. /usr/share/gazebo/setup.sh
 ```
 
-### Navigating with an existing map
+# Isaac Sim startup
+
+The four-terminal workflow keeps Isaac Sim, ROS Control, AMCL and Nav2
+separate, making each layer easier to inspect. Build the workspace as described
+above before starting these terminals.
+
+## Terminal 1: start the Isaac Sim GUI and maze
+
+Use the Python executable from the Anaconda environment `env_isaaclab`:
+
+```bash
+source ~/anaconda3/etc/profile.d/conda.sh
+conda activate env_isaaclab
+cd ~/ros2_ws/src/mir_ur5_humble
+
+python isaac_sim/mir_isaac_sim.py \
+  --lasers \
+  --world isaac_sim/usd/maze.usd \
+  --top-down
+```
+
+Wait until Isaac Sim finishes loading and starts stepping the simulation before
+opening the other terminals. Isaac Sim is the `/clock` source. If you restart
+it during a run, also restart the following three ROS launches.
+
+## Terminal 2: start ROS Control, RViz and the dual-laser merger
+
+Open a normal ROS terminal without activating Conda:
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mir_description mir_isaac.launch.py launch_moveit:=false
+```
+
+This launch includes the robot state publisher, ROS Control, RViz and
+`/f_scan + /b_scan -> /scan`; do not start a second scan merger. Omit
+`launch_moveit:=false` if you also want to control the UR5 arm with MoveIt2.
+
+## Terminal 3: localize against the maze map
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mir_navigation amcl.py use_sim_time:=true \
+  map:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/maps/maze.yaml
+```
+
+## Terminal 4: start Nav2
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mir_navigation navigation.py use_sim_time:=true \
+  cmd_vel_w_prefix:=/diff_cont/cmd_vel_unstamped
+```
+
+## Drive the robot from RViz
+
+1. Use **2D Pose Estimate** to set the base's initial position and heading.
+2. Wait for the laser scan to line up with the map.
+3. Drag a goal arrow with **Nav2 Goal**. The arrow direction is the desired
+   final heading; navigation is complete when Nav2 reports `Goal succeeded`.
+
+Quick checks:
+
+```bash
+ros2 topic hz /scan                         # about 12 Hz
+ros2 control list_controllers               # controllers should be active
+ros2 lifecycle get /amcl                    # active
+ros2 lifecycle get /bt_navigator            # active
+```
+
+If a goal is accepted but the base does not move, check `/scan` and AMCL first,
+then confirm Isaac Sim has not been restarted. Measured results for narrow maze
+gaps, turning in place and stress tests are in
+[`isaac_debug.md`](isaac_debug.md).
+
+## Isaac Sim options
+
+For the full sensor, USD conversion and physics documentation, see
+[`isaac_sim/README_isaac.md`](isaac_sim/README_isaac.md).
+
+### Start Isaac Sim, ROS Control and RViz with one command
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ISAAC_PYTHON=~/anaconda3/envs/env_isaaclab/bin/python
+
+ros2 launch mir_description mir_isaac.launch.py \
+  launch_isaac:=true world:=maze top_down:=true launch_moveit:=false
+```
+
+This is shorter, but the four-terminal flow above keeps the Isaac Sim and ROS
+logs separate. `launch_isaac:=true` uses `ISAAC_PYTHON` to start
+`mir_isaac_sim.py`.
+
+### Switch to SLAM mapping
+
+Keep Isaac Sim, ROS Control and Nav2 running, but replace the AMCL command in
+Terminal 3 with:
+
+```bash
+ros2 launch mir_navigation mapping.py use_sim_time:=true \
+  slam_params_file:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/config/mir_mapping_async_sim.yaml
+```
+
+### Common launch options
+
+```bash
+# No Isaac GUI; the PhysX lasers still work.
+ros2 launch mir_description mir_isaac.launch.py \
+  launch_isaac:=true world:=maze headless:=true launch_rviz:=false launch_moveit:=false
+
+# ROS Control only, without MoveIt, RViz or the scan merger.
+ros2 launch mir_description mir_isaac.launch.py \
+  launch_moveit:=false launch_rviz:=false launch_scan_merger:=false
+```
+
+Isaac Sim publishes `/f_scan`, `/b_scan`, `/odom` and
+`odom -> base_footprint`; the ROS launch merges the two lasers into `/scan` by
+default. `diffdrive_controller_isaac.yaml` only overrides
+`enable_odom_tf: false`, so ROS Control and Isaac Sim do not publish the same TF
+twice. All other controller parameters are shared with Gazebo through
+`diffdrive_controller.yaml`.
+
+# Gazebo startup
+
+Gazebo and all of its ROS nodes use the system ROS environment; do not activate
+`env_isaaclab`. Run this setup in every Gazebo terminal:
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+. /usr/share/gazebo/setup.sh
+```
+
+## Navigate with an existing map
 
 Open three terminals in order:
 
@@ -215,7 +266,7 @@ ros2 launch mir_navigation navigation.py use_sim_time:=true \
 In RViz press **2D Pose Estimate** first, and only press **Nav2 Goal** once the
 laser scan lines up with the map.
 
-### Mapping with SLAM
+## Map with SLAM
 
 Terminal 1 still starts Gazebo; replace Terminal 2 with:
 
@@ -227,60 +278,13 @@ ros2 launch mir_navigation mapping.py use_sim_time:=true \
 If you want to navigate automatically while mapping, also start Terminal 3 from
 above.
 
-### MoveIt2 (optional)
+## MoveIt2 (optional)
 
 ```bash
 ros2 launch ur_moveit_config ur_moveit.launch.py \
   ur_type:=ur5 prefix:=ur_ launch_rviz:=true \
   use_fake_hardware:=true use_sim_time:=true
 ```
-
-# Isaac Sim options
-
-The full GUI maze navigation walkthrough is at the top of this README. This
-section only lists the common variations; for the full description of the
-sensors, USD conversion and physics parameters see
-[`isaac_sim/README_isaac.md`](isaac_sim/README_isaac.md).
-
-### Start Isaac + ROS Control + RViz with a single command
-
-```bash
-ros2 launch mir_description mir_isaac.launch.py \
-  launch_isaac:=true world:=maze top_down:=true launch_moveit:=false
-```
-
-This takes fewer commands; when you need to watch the Isaac and ROS output
-separately, the 4-terminal flow above is still recommended. `launch_isaac:=true`
-is the only mode that needs `ISAAC_PYTHON` to be exported — it starts
-`mir_isaac_sim.py` itself.
-
-### Switching to SLAM mapping
-
-Keep Terminals 1, 2 and 4 of the quick start and replace AMCL with:
-
-```bash
-ros2 launch mir_navigation mapping.py use_sim_time:=true \
-  slam_params_file:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/config/mir_mapping_async_sim.yaml
-```
-
-### Common launch options
-
-```bash
-# No Isaac GUI (the PhysX lasers still work)
-ros2 launch mir_description mir_isaac.launch.py \
-  launch_isaac:=true world:=maze headless:=true launch_rviz:=false launch_moveit:=false
-
-# ROS Control only, without MoveIt, RViz or the scan merger
-ros2 launch mir_description mir_isaac.launch.py \
-  launch_moveit:=false launch_rviz:=false launch_scan_merger:=false
-```
-
-Isaac publishes `/f_scan`, `/b_scan`, `/odom` and `odom -> base_footprint`; the
-ROS launch merges the two lasers into `/scan` by default.
-`diffdrive_controller_isaac.yaml` only overrides `enable_odom_tf: false`, so that
-ROS Control and Isaac do not publish the same TF twice. All other controller
-parameters are shared with Gazebo through `diffdrive_controller.yaml`, which
-keeps the two simulators' settings from drifting apart.
 
 # Real robot demo (MiR100 + UR5 hardware)
 
@@ -373,28 +377,31 @@ Key points (details in `claude_debug.md`):
   (`unknown goal response`):
   `pkill -f mir_nav_launch.py; pkill -f mir_launch.py; pkill -f twist_stamper; pkill -f teleop_twist_keyboard; pkill xterm`
 
-# Running on another machine
+# Using a different installation path
 
-Setting `MIR_WS`, `MIR_REPO` and `ISAAC_PYTHON`
-([above](#paths-used-in-this-readme)) covers every command in this README. No
-absolute path is baked into the launch files:
+This README assumes `~/ros2_ws/src/mir_ur5_humble` and the Anaconda environment
+`env_isaaclab`, as described in
+[Assumed directory and Python environment](#assumed-directory-and-python-environment).
+If your installation is elsewhere, update `MIR_WS`, `MIR_REPO` and
+`ISAAC_PYTHON`. No absolute path is baked into the launch files:
 
 | Launch arg | Where its default comes from |
 |---|---|
 | `isaac_python` | `$ISAAC_PYTHON`; the launch aborts with a clear message if it is unset |
 | `isaac_dir` | `$MIR_ISAAC_DIR`, else `isaac_sim/` is derived from the launch file's own location in this checkout |
 
-Both are only read when `launch_isaac:=true`; the 4-terminal quick start starts
-Isaac itself and never touches them. The `isaac_dir` derivation needs the
+Both are only read when `launch_isaac:=true`; the four-terminal workflow starts
+Isaac Sim directly and never touches them. The `isaac_dir` derivation needs the
 `--symlink-install` build used throughout this README (a plain copying build
 breaks the link back to the source tree — then pass `isaac_dir:=` explicitly).
 
 Other portability notes:
+
 - `mir_isaac_sim.py` is meant to be run directly; its `--usd` default is computed
   relative to the script, so it is path-independent. Only `--world` takes a full
   path.
-- Run the script with **Isaac's own python** (`python.sh`) or an env that can
-  import `omni.*` / `pxr`; plain system python cannot load the Isaac modules.
+- Run the script with Python from the `env_isaaclab` environment. Plain system
+  Python cannot load the Isaac Sim modules.
 - Isaac's shipped lidar-config dir may contain a symlink to an Isaac Sim
   location that does not exist on your machine; this only affects *custom RTX*
   lidar profiles — the default PhysX `--lasers` path is unaffected.
