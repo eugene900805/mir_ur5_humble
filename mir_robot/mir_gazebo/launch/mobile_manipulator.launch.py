@@ -29,6 +29,7 @@
 # Author: Denis Stogl
 
 import os
+import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -43,13 +44,23 @@ from launch.event_handlers import OnProcessStart
 from launch.event_handlers import OnProcessExit
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
-from moveit_configs_utils import MoveItConfigsBuilder
+
+
+def load_yaml(package_name, file_path):
+    package_path = get_package_share_directory(package_name)
+    absolute_file_path = os.path.join(package_path, file_path)
+    try:
+        with open(absolute_file_path, "r") as file:
+            return yaml.safe_load(file)
+    except (EnvironmentError, yaml.YAMLError):
+        return None
 
 
 def generate_launch_description():
 
     mir_description_dir = get_package_share_directory('mir_description')
     mir_gazebo_dir = get_package_share_directory('mir_gazebo')
+    mir_navigation_dir = get_package_share_directory('mir_navigation')
     gazebo_ros_dir = get_package_share_directory('gazebo_ros')
 
     rviz_config_file = LaunchConfiguration('rviz_config_file')
@@ -101,10 +112,15 @@ def generate_launch_description():
         default_value='true',
         description='Set to true to launch rviz.')
 
+    declare_moveit_arg = DeclareLaunchArgument(
+        'launch_moveit',
+        default_value='true',
+        description='Set to true to launch MoveIt2 move_group.')
+
     declare_rviz_config_arg = DeclareLaunchArgument(
         'rviz_config_file',
         default_value=os.path.join(
-            mir_description_dir, 'rviz', 'mir_visu_full.rviz'),
+            mir_navigation_dir, 'rviz', 'mir_nav.rviz'),
         description='Define rviz config file to be used.')
 
     declare_gui_arg = DeclareLaunchArgument(
@@ -166,7 +182,9 @@ def generate_launch_description():
         ]
     )
 
-    robot_description2 = {"robot_description": robot_description}
+    robot_description2 = {
+        "robot_description": ParameterValue(robot_description, value_type=str)
+    }
     
     launch_mir_description = Node(
         package='robot_state_publisher',
@@ -280,31 +298,81 @@ def generate_launch_description():
         arguments=["gripper_position_controller", "-c", "/controller_manager"],
     )
 
-    # moveit_config = (
-    #     MoveItConfigsBuilder("custom_robot", package_name="mir_ur_moveit_config")
-    #     .robot_description(file_path="config/mir100.urdf.xacro")
-    #     .robot_description_semantic(file_path="config/mir100.srdf")
-    #     .trajectory_execution(file_path="config/moveit_controllers.yaml")
-    #     .robot_description_kinematics(file_path="config/kinematics.yaml")
-    #     .planning_scene_monitor(
-    #         publish_robot_description= True, publish_robot_description_semantic=True, publish_planning_scene=True
-    #     )
-    #     .planning_pipelines(
-    #         pipelines=["ompl", "chomp", "pilz_industrial_motion_planner"]
-    #     )
-    #     .to_moveit_configs()
-    # )
-    # use_sim_time={"use_sim_time": LaunchConfiguration('use_sim_time')}
-    # config_dict = moveit_config.to_dict()
-    # config_dict.update(use_sim_time)
+    # MoveIt2 uses the same combined MiR + UR + Robotiq description and the
+    # same controller names as Gazebo's ros2_control setup.
+    moveit_config_share = FindPackageShare("ur_moveit_config")
+    robot_description_semantic = {
+        "robot_description_semantic": ParameterValue(
+            Command([
+                PathJoinSubstitution([FindExecutable(name="cat")]), " ",
+                PathJoinSubstitution([moveit_config_share, "srdf", "mir_100.srdf"]),
+            ]),
+            value_type=str,
+        )
+    }
 
-    # move_group_node = Node(
-    #     package="moveit_ros_move_group",
-    #     executable="move_group",
-    #     output="screen",
-    #     parameters=[config_dict],
-    #     arguments=["--ros-args", "--log-level", "info"],
-    # )
+    kinematics_yaml = load_yaml("ur_moveit_config", "config/kinematics.yaml") or {}
+    if "/**" in kinematics_yaml:
+        robot_description_kinematics = kinematics_yaml["/**"]["ros__parameters"]
+    else:
+        robot_description_kinematics = kinematics_yaml
+
+    ompl_planning_pipeline_config = {
+        "move_group": {
+            "planning_plugin": "ompl_interface/OMPLPlanner",
+            "request_adapters":
+                "default_planner_request_adapters/AddTimeOptimalParameterization "
+                "default_planner_request_adapters/ResolveConstraintFrames "
+                "default_planner_request_adapters/FixWorkspaceBounds "
+                "default_planner_request_adapters/FixStartStateBounds "
+                "default_planner_request_adapters/FixStartStateCollision "
+                "default_planner_request_adapters/FixStartStatePathConstraints",
+            "start_state_max_bounds_error": 0.1,
+        }
+    }
+    ompl_yaml = load_yaml("ur_moveit_config", "config/ompl_planning.yaml")
+    if ompl_yaml:
+        ompl_planning_pipeline_config["move_group"].update(ompl_yaml)
+
+    controllers_yaml = load_yaml("ur_moveit_config", "config/controllers.yaml")
+    controllers_yaml["passthrough_trajectory_controller"]["default"] = False
+    controllers_yaml["scaled_joint_trajectory_controller"]["default"] = False
+    controllers_yaml["joint_trajectory_controller"]["default"] = True
+    moveit_controllers = {
+        "moveit_simple_controller_manager": controllers_yaml,
+        "moveit_controller_manager":
+            "moveit_simple_controller_manager/MoveItSimpleControllerManager",
+    }
+
+    trajectory_execution = {
+        "moveit_manage_controllers": False,
+        "trajectory_execution.allowed_execution_duration_scaling": 1.2,
+        "trajectory_execution.allowed_goal_duration_margin": 0.5,
+        "trajectory_execution.allowed_start_tolerance": 0.1,
+    }
+    planning_scene_monitor_parameters = {
+        "publish_planning_scene": True,
+        "publish_geometry_updates": True,
+        "publish_state_updates": True,
+        "publish_transforms_updates": True,
+    }
+
+    move_group_node = Node(
+        package="moveit_ros_move_group",
+        executable="move_group",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("launch_moveit")),
+        parameters=[
+            robot_description2,
+            robot_description_semantic,
+            robot_description_kinematics,
+            ompl_planning_pipeline_config,
+            trajectory_execution,
+            moveit_controllers,
+            planning_scene_monitor_parameters,
+            {"use_sim_time": LaunchConfiguration("use_sim_time")},
+        ],
+    )
     
     launch_rviz = Node(
         condition=IfCondition(LaunchConfiguration('rviz_enabled')),
@@ -312,7 +380,12 @@ def generate_launch_description():
         executable='rviz2',
         output={'both': 'log'},
         arguments=['-d', rviz_config_file],
-        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
+        parameters=[
+            robot_description2,
+            robot_description_semantic,
+            robot_description_kinematics,
+            {'use_sim_time': LaunchConfiguration('use_sim_time')},
+        ],
     )
 
     launch_teleop = Node(
@@ -334,6 +407,7 @@ def generate_launch_description():
     ld.add_action(declare_verbose_arg)
     ld.add_action(declare_teleop_arg)
     ld.add_action(declare_rviz_arg)
+    ld.add_action(declare_moveit_arg)
     ld.add_action(declare_rviz_config_arg)
     ld.add_action(declare_gui_arg)
 
@@ -347,7 +421,7 @@ def generate_launch_description():
     ld.add_action(launch_mir_gazebo_common)
     ld.add_action(joint_trajectory_controller_spawner)
     ld.add_action(gripper_controller_spawner)
-    # ld.add_action(move_group_node)
+    ld.add_action(move_group_node)
     #ld.add_action(control_node)
     #ld.add_action(control_node)
     

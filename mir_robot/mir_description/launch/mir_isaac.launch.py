@@ -273,15 +273,21 @@ def generate_launch_description():
     if ompl_yaml:
         ompl_planning_pipeline_config["move_group"].update(ompl_yaml)
 
+    controllers_yaml = load_yaml("ur_moveit_config", "config/controllers.yaml")
+    # Both simulators spawn joint_trajectory_controller. The shared controller
+    # file defaults to the hardware-only passthrough controller, so select the
+    # simulator controller explicitly for MoveIt trajectory execution.
+    controllers_yaml["passthrough_trajectory_controller"]["default"] = False
+    controllers_yaml["scaled_joint_trajectory_controller"]["default"] = False
+    controllers_yaml["joint_trajectory_controller"]["default"] = True
     moveit_controllers = {
-        "moveit_simple_controller_manager":
-            load_yaml("ur_moveit_config", "config/controllers.yaml"),
+        "moveit_simple_controller_manager": controllers_yaml,
         "moveit_controller_manager":
             "moveit_simple_controller_manager/MoveItSimpleControllerManager",
     }
 
     trajectory_execution = {
-        "moveit_manage_controllers": True,
+        "moveit_manage_controllers": False,
         "trajectory_execution.allowed_execution_duration_scaling": 1.2,
         "trajectory_execution.allowed_goal_duration_margin": 0.5,
         # Isaac drives the arm with a finite-stiffness PD position drive, so the

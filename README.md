@@ -55,6 +55,7 @@ For the Isaac Sim back-end and the Nav2 stack also install:
 sudo apt install ros-humble-topic-based-ros2-control
 sudo apt install ros-humble-navigation2 ros-humble-nav2-bringup ros-humble-slam-toolbox
 sudo apt install ros-humble-pcl-ros ros-humble-pcl-conversions
+sudo apt install ros-humble-moveit
 ```
 
 Before continuing, make sure the prepared Anaconda environment exists at
@@ -124,7 +125,7 @@ Wait until Isaac Sim finishes loading and starts stepping the simulation before
 opening the other terminals. Isaac Sim is the `/clock` source. If you restart
 it during a run, also restart the following three ROS launches.
 
-## Terminal 2: start ROS Control, RViz and the dual-laser merger
+## Terminal 2: start ROS Control, MoveIt2, RViz and the dual-laser merger
 
 Open a normal ROS terminal without activating Conda:
 
@@ -133,12 +134,12 @@ cd ~/ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
-ros2 launch mir_description mir_isaac.launch.py launch_moveit:=false
+ros2 launch mir_description mir_isaac.launch.py launch_moveit:=true
 ```
 
-This launch includes the robot state publisher, ROS Control, RViz and
-`/f_scan + /b_scan -> /scan`; do not start a second scan merger. Omit
-`launch_moveit:=false` if you also want to control the UR5 arm with MoveIt2.
+This launch includes the robot state publisher, ROS Control, MoveIt2, RViz and
+`/f_scan + /b_scan -> /scan`; do not start a second scan merger. RViz contains
+both the navigation tools and the MoveIt **MotionPlanning** panel.
 
 ## Terminal 3: localize against the maze map
 
@@ -168,12 +169,14 @@ ros2 launch mir_navigation navigation.py use_sim_time:=true \
 2. Wait for the laser scan to line up with the map.
 3. Drag a goal arrow with **Nav2 Goal**. The arrow direction is the desired
    final heading; navigation is complete when Nav2 reports `Goal succeeded`.
+4. Use **Plan & Execute** in the **MotionPlanning** panel to move the UR5 arm.
 
 Quick checks:
 
 ```bash
 ros2 topic hz /scan                         # about 12 Hz
 ros2 control list_controllers               # controllers should be active
+ros2 node list | grep move_group            # /move_group
 ros2 lifecycle get /amcl                    # active
 ros2 lifecycle get /bt_navigator            # active
 ```
@@ -188,7 +191,7 @@ gaps, turning in place and stress tests are in
 For the full sensor, USD conversion and physics documentation, see
 [`isaac_sim/README_isaac.md`](isaac_sim/README_isaac.md).
 
-### Start Isaac Sim, ROS Control and RViz with one command
+### Start Isaac Sim, ROS Control, MoveIt2 and RViz with one command
 
 ```bash
 cd ~/ros2_ws
@@ -197,7 +200,7 @@ source install/setup.bash
 export ISAAC_PYTHON=~/anaconda3/envs/env_isaaclab/bin/python
 
 ros2 launch mir_description mir_isaac.launch.py \
-  launch_isaac:=true world:=maze top_down:=true launch_moveit:=false
+  launch_isaac:=true world:=maze top_down:=true launch_moveit:=true
 ```
 
 This is shorter, but the four-terminal flow above keeps the Isaac Sim and ROS
@@ -250,9 +253,9 @@ source install/setup.bash
 Open three terminals in order:
 
 ```bash
-# Terminal 1: Gazebo maze + RViz
-ros2 launch mir_gazebo mobile_manipulator.launch.py world:=maze \
-  rviz_config_file:=$(ros2 pkg prefix mir_navigation)/share/mir_navigation/rviz/mir_nav.rviz
+# Terminal 1: Gazebo maze + ROS Control + MoveIt2 + RViz
+ros2 launch mir_gazebo mobile_manipulator.launch.py \
+  world:=maze launch_moveit:=true
 
 # Terminal 2: AMCL localization
 ros2 launch mir_navigation amcl.py use_sim_time:=true \
@@ -264,7 +267,8 @@ ros2 launch mir_navigation navigation.py use_sim_time:=true \
 ```
 
 In RViz press **2D Pose Estimate** first, and only press **Nav2 Goal** once the
-laser scan lines up with the map.
+laser scan lines up with the map. Use **Plan & Execute** in the
+**MotionPlanning** panel to move the UR5 arm.
 
 ## Map with SLAM
 
@@ -278,13 +282,8 @@ ros2 launch mir_navigation mapping.py use_sim_time:=true \
 If you want to navigate automatically while mapping, also start Terminal 3 from
 above.
 
-## MoveIt2 (optional)
-
-```bash
-ros2 launch ur_moveit_config ur_moveit.launch.py \
-  ur_type:=ur5 prefix:=ur_ launch_rviz:=true \
-  use_fake_hardware:=true use_sim_time:=true
-```
+MoveIt2 is already started by Gazebo's Terminal 1 command. Pass
+`launch_moveit:=false` only when you intentionally want to disable it.
 
 # Real robot demo (MiR100 + UR5 hardware)
 
