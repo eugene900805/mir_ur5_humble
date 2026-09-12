@@ -353,6 +353,110 @@ or on the real robot, where it needs `use_sim_time:=false best_effort:=true`.)
 
 Sanity check before nav: `ros2 topic hz /scan` should be ~12 Hz.
 
+## 7. Gripper physics & grasping
+
+The Robotiq's *kinematics* come straight from the upstream description and are
+correct (the pad opening measures 84.90 mm at `master = 0`, i.e. the real 85 mm
+stroke, closing to 1.02 mm at the 0.8 rad joint limit). What needed fixing was
+the *physics tuning*, which now mirrors NVIDIA's official Robotiq 2F-85 asset —
+`Isaac/Robots/Robotiq/2F-85/payloads/Robotiq_2F_85_phyisics_mimic.usda` on the
+Isaac asset server, which is plain `.usda` and worth reading if you retune.
+
+| setting | flag | value | source |
+|---|---|---|---|
+| mimic natural frequency | `--mimic-natural-frequency` | 0.0 | official |
+| mimic damping ratio | `--mimic-damping-ratio` | 0.0 | official |
+| master drive stiffness | `--gripper-stiffness` | 3 | official |
+| master drive max force | `--gripper-max-force` | 26 N·m | official |
+| master drive damping | `--gripper-damping` | 0.25 | re-derived, see below |
+| gripper armature | `--gripper-armature` | 0.05 | kept (official: 0.0001) |
+| solver position iterations | `--solver-position-iterations` | 64 | official |
+| finger-pad friction | `--pad-friction` | 1.0 | added, see below |
+
+**The mimic joints are springs, not gears.** The URDF importer authors every
+`physxMimicJoint:<axis>:naturalFrequency = 25` / `dampingRatio = 0.005`. That is
+exact in free space but the spring stretches as soon as the fingers load up
+against an object — measured up to **0.85 rad (49°)** of follower error while
+gripping. Setting both to **0** selects a non-compliant (hard) mimic, which is
+what the official asset uses and what NVIDIA's docs recommend starting from;
+follower error then stays ≤ 1.2e-4 rad under load. ROS cannot see the old error:
+only the master joint is declared under `sim_isaac`, so `robot_state_publisher`
+reconstructs the followers from the URDF `<mimic>` tags and RViz always showed an
+ideal gripper.
+
+**Grip force.** The master drive used to be hard-coded to 1e3 N·m — about 40× the
+real gripper (NVIDIA's estimate for the 2F-85 is 24 N·m, their asset ships 26,
+and the URDF's own effort limit is 50). At 1e3 the fingers close straight
+*through* a 40 mm object, penetrating it by 39 mm, and "hold" it only because it
+is impaled on them.
+
+**Damping must track the armature.** Official's `damping = 0.0002` pairs with
+their `armature = 0.0001`. We keep armature at 0.05 (their asset is a standalone
+gripper; ours hangs off a moving UR5, and at 0.0001 the mimic error on a 20 mm
+grasp is 2.5e-2 rad vs 1.1e-4 at 0.05) — so the damping has to scale with it or
+the drive becomes a 3.8 Hz oscillator at a damping ratio of 0.0008. Symptom:
+**the gripper visibly rings while holding a mid-travel position** (measured 37
+mrad = 2.1° peak-to-peak). It does *not* ring when commanded fully closed,
+because the joint limit stops it — so a jitter check must hold a position in the
+middle of the travel. Critical damping for our inertia is
+`d_usd ≈ 2·√(k_usd·57.3·I)/57.3` ≈ 0.25, which brings the ringing to 0.002 mrad.
+Note the USD angular-drive units are **per degree** and per degree/s.
+
+**Finger-pad friction.** The imported USD defines *no* physics material at all,
+so the pads fall back to the PhysX default. The upstream Robotiq URDF does ask
+for grippy pads, but through a Gazebo-only
+`<collision><surface><friction><ode><mu1>100000</mu1>` block that the Isaac
+importer drops. `--pad-friction` binds a real material to the 4 finger
+colliders; without it a 1 kg object slides 238 mm out of the pads, with it
+0.05 mm.
+
+Verified with the shipped defaults — 20/40/60 mm cubes at 0.2 kg and 40 mm at
+0.5 and 1.0 kg: contact is finger-pad-only in every case (no proximal link
+pinching the object), the master stalls within ~5% of the angle the pad geometry
+predicts, follower mimic error ≤ 1.2e-4 rad and slip ≤ 0.08 mm. The full ROS path
+was checked too: a `/gripper_position_controller/gripper_cmd` action at
+0.0/0.3/0.6/0.79 rad reaches goal every time with `/joint_states` and
+`/isaac_joint_states` agreeing to four decimals.
+
+> **Behaviour change:** the master joint now stalls at the true contact angle
+> (~0.45 rad on a 40 mm object) instead of always driving to 0.8. Anything that
+> infers "gripped" from the master angle needs recalibrating — use where it
+> stalls, or the action's `stalled` field.
+
+### Self-collisions are off, robot-wide
+
+`physxArticulation:enabledSelfCollisions` is **False**, both in the USD
+(`/mir_100/base_footprint`) and again at runtime. It is an articulation-level
+flag and the MiR, UR5 and Robotiq are one articulation, so **no two links of the
+robot collide with each other** — measured: the left and right inner knuckles sit
+35 mm inside each other for the whole gripper travel and nothing pushes them
+apart, and the arm can be driven 175 mm through the MiR cabinet and still reach
+its joint target to 0.7°.
+
+Leave it off. `--keep-self-collisions` re-enables it, but on this articulation
+that **segfaults omni.physx** during the first settle (reproduced on both the old
+and the new gripper tuning; toggling it mid-run crashes too). The likely trigger
+is that many collider hulls start deeply interpenetrating — 14–38 mm between
+gripper link pairs, including the two inner knuckles, which are on separate
+branches and so are not auto-filtered as adjacent. NVIDIA's official 2F-85 asset
+also ships with `enabledSelfCollisions = 0`, so this is not an artefact of our
+conversion; that asset does use `PhysicsCollisionGroup` + `filteredGroups` for
+finer-grained filtering, which is the direction to look if per-pair
+self-collision is ever needed.
+
+What this does **not** affect: collision with external objects. Grasping, wall
+contact and floor contact are all normal, and MoveIt still does its own SRDF
+self-collision checking, so planned motions avoid self-intersection. The gap is
+only for joint commands sent outside MoveIt — nothing in physics stops the arm
+from passing through the chassis.
+
+Separately, and for a different reason, `unblock_lidar_self_collision()` disables
+`collisionEnabled` on the chassis colliders that cross the laser plane (z ≈ 0.19)
+when `--lasers` is used: the PhysX RangeSensor ray-casts the robot's own body,
+unlike Gazebo's ray sensor. That is per-collider, not the articulation flag. It
+could instead be baked into the USD by cutting the geometry, but the USD is
+regenerated from the xacro (§3) and a hand-edited notch would be lost each time.
+
 ## Notes
 
 - **use_sim_time** is `true` everywhere; Isaac is the `/clock` source. Start
@@ -398,23 +502,27 @@ Sanity check before nav: `ros2 topic hz /scan` should be ~12 Hz.
 - **Jitter / idle-rotation tuning** (`mir_isaac_sim.py`): the imported
   articulation may need non-default physics knobs to sit still and not buzz.
   These are CLI flags. **Only the gripper ones are on by default**
-  (`--gripper-armature 0.05`, `--solver-position-iterations 32`, self-collisions
+  (`--gripper-armature 0.05`, `--solver-position-iterations 64`, self-collisions
   off) — the chassis and arm knobs below all default to **0.0**, i.e. off,
   because the damping values are a cure that can be worse than the disease
   (`--base-linear-damping 2.0` drags the base so hard it barely drives under
   Nav2). Measured on the current build: with every chassis knob at 0.0 the idle
   base is **exactly** static (0.000 mm/s linear, 0.0°/h yaw over 58 s of sim
   time), so reach for these only if you actually see movement. Symptom → fix:
-  - *Gripper buzzes.* The Robotiq fingers have ~1e-5 kg·m² inertia, so the stiff
-    position drive + the hard PhysX mimic coupling (`physxMimicJoint:gearing` on
-    an over-constrained 4-bar linkage) oscillate faster than the sim step can
-    integrate. Fix = **armature** on the 6 gripper joints (`--gripper-armature`,
-    default 0.05) which raises their effective inertia into the integrable range,
-    plus a higher articulation **solver position-iteration count**
-    (`--solver-position-iterations`, default 32; importer default ~4) to converge
-    the coupling each step. Self-collisions are also disabled by default
-    (`--keep-self-collisions` to re-enable) so the fingers don't graze each
-    other — external-object collision (grasping) is unaffected.
+  - *Gripper buzzes.* The Robotiq fingers have ~1e-5 kg·m² inertia, so a stiff
+    position drive oscillates faster than the sim step can integrate. Fix =
+    **armature** on the 6 gripper joints (`--gripper-armature`, default 0.05)
+    which raises their effective inertia into the integrable range, plus a
+    higher articulation **solver position-iteration count**
+    (`--solver-position-iterations`, default 64; importer default ~4).
+    **If you change the armature or the stiffness you MUST re-derive the
+    damping** — see [§7](#7-gripper-physics--grasping); mismatching them is what
+    makes the gripper visibly ring while holding a mid-travel position.
+    (An earlier revision of this document blamed the buzzing on the mimic joints
+    "over-constraining a 4-bar linkage". That was wrong: in the URDF the gripper
+    is a pure tree — base → {left,right}\_knuckle → finger → finger_tip plus two
+    independent inner_knuckle branches — so the 5 mimic constraints act on 5
+    separate followers and nothing is redundant.)
   - *Arm (wrist) jitters.* Same low-inertia ringing on the small wrist joints →
     **armature** on the 6 UR joints (`--arm-armature`, **default 0.0 = off**;
     0.05 is the value to try).

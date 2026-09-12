@@ -100,27 +100,88 @@ parser.add_argument("--caster-swivel-damping", type=float, default=0.0,
                          "the swivel gets light damping so the trailing casters "
                          "cannot pump yaw into the chassis (base slowly spinning "
                          "in place when idle). 0.0 = fully free (old behaviour).")
-parser.add_argument("--gripper-stiffness", type=float, default=1.0e4,
-                    help="Stiffness of the Robotiq master position drive. The "
-                         "finger links have tiny inertia, so a very stiff drive "
-                         "rings; lower this (e.g. 1e3) together with --gripper-"
-                         "armature if the gripper buzzes.")
-parser.add_argument("--gripper-damping", type=float, default=1.0e3,
-                    help="Damping on the Robotiq master position drive. Raise to "
-                         "settle gripper/finger jitter from the PhysX mimic "
-                         "coupling.")
+# Gripper physics: these match NVIDIA's OFFICIAL Robotiq 2F-85 asset
+#   Isaac/Robots/Robotiq/2F-85/payloads/Robotiq_2F_85_phyisics_mimic.usda
+# (finger_joint drive stiffness 3 / damping 0.0002 / maxForce 26, mimic
+# naturalFrequency 0 + dampingRatio 0, solverPositionIterationCount 64).
+# The previous values (1e4 / 1e3 / 1e3, 32 iterations) were ~5700x stiffer than
+# the importer's own authored drive and made the fingers plough straight through
+# whatever they grasped; see the notes on each flag.
+parser.add_argument("--gripper-stiffness", type=float, default=3.0,
+                    help="Stiffness of the Robotiq master position drive, in USD "
+                         "angular-drive units (per DEGREE, not per radian). "
+                         "NVIDIA's official 2F-85 asset uses 3; the URDF importer "
+                         "authors 1.745 (= 100 rad-units). Values in the 1e4 range "
+                         "overwhelm the contact constraint and the fingers close "
+                         "through the object.")
+parser.add_argument("--gripper-damping", type=float, default=0.25,
+                    help="Damping on the Robotiq master position drive, in USD "
+                         "units (per DEGREE/s: 1e3 here is 57,300 N*m/(rad/s)). "
+                         "NVIDIA's official asset uses 0.0002, but that pairs with "
+                         "their armature of 0.0001 — with ours (0.05, see "
+                         "--gripper-armature) the effective inertia is ~0.3 kg*m^2, "
+                         "which turns the drive into a 3.8 Hz oscillator at a "
+                         "damping ratio of 0.0008, i.e. visibly ringing whenever "
+                         "the gripper holds a MID-TRAVEL position (measured 37 "
+                         "mrad = 2.1 deg peak-to-peak; 0.25 is critical damping "
+                         "for that inertia and brings it to 0.002 mrad). Note it "
+                         "does NOT ring when commanded fully closed, because the "
+                         "joint limit stops it — so a jitter check must hold a "
+                         "position in the middle of the travel to see this. Must "
+                         "also stay in proportion to --gripper-max-force: a small "
+                         "max force against a large damping velocity-locks the "
+                         "joint (26/57300 = 0.0005 rad/s, i.e. it never closes).")
+parser.add_argument("--gripper-max-force", type=float, default=26.0,
+                    help="Max torque (N*m) of the Robotiq master drive. NVIDIA's "
+                         "official asset uses 26 and their tuning guide estimates "
+                         "24 for the real 2F-85; the URDF's own effort limit is "
+                         "50. The old hard-coded 1e3 is ~40x the real gripper and "
+                         "penetrates a 40 mm object by 39 mm instead of gripping "
+                         "it.")
 parser.add_argument("--gripper-armature", type=float, default=0.05,
                     help="Rotor inertia (armature) added to the 6 Robotiq joints. "
-                         "The fingers' inertia is ~1e-5 kg*m^2, so the stiff drive "
-                         "+ hard PhysX mimic coupling oscillate faster than the "
-                         "sim step can integrate -> buzzing. Armature raises the "
-                         "joints' effective inertia into the integrable range and "
-                         "is the standard fix. 0.0 disables it.")
-parser.add_argument("--solver-position-iterations", type=int, default=32,
-                    help="PhysX articulation solver position-iteration count. The "
-                         "Robotiq finger linkage is over-constrained by the hard "
-                         "mimic joints; more iterations converge those constraints "
-                         "each step and cut gripper jitter. (default importer ~4)")
+                         "The fingers' inertia is ~1e-5 kg*m^2, so a stiff drive "
+                         "oscillates faster than the sim step can integrate -> "
+                         "buzzing. This is the ONE gripper value kept above "
+                         "NVIDIA's official asset (which uses 0.0001): that asset "
+                         "is tuned for a standalone gripper, while ours hangs off "
+                         "a moving UR5. Measured on a 20 mm grasp, 0.05 gives a "
+                         "mimic error of 1.1e-4 rad vs 2.5e-2 at 0.0001. "
+                         "0.0 disables it.")
+parser.add_argument("--mimic-natural-frequency", type=float, default=0.0,
+                    help="PhysX mimic-joint spring frequency (rad/s) on the 5 "
+                         "Robotiq follower joints. 0.0 together with "
+                         "--mimic-damping-ratio 0.0 selects a NON-COMPLIANT (hard) "
+                         "mimic, which is what NVIDIA's official asset uses and "
+                         "what their docs recommend starting from. The URDF "
+                         "importer instead authors 25.0 / 0.005 -- a very soft, "
+                         "nearly undamped spring that is exact in free space but "
+                         "stretches up to 0.85 rad (49 deg) once the fingers load "
+                         "up against an object. ROS cannot see that error: only "
+                         "the master joint is declared under sim_isaac, so "
+                         "robot_state_publisher reconstructs the followers from "
+                         "the URDF <mimic> tags and RViz shows an ideal gripper.")
+parser.add_argument("--mimic-damping-ratio", type=float, default=0.0,
+                    help="Damping ratio of the mimic spring. 0.0 = non-compliant "
+                         "(see --mimic-natural-frequency). Raising this alone does "
+                         "nothing: measured 0.790 -> 0.791 rad of error at "
+                         "naturalFrequency 25.")
+parser.add_argument("--pad-friction", type=float, default=1.0,
+                    help="Static/dynamic friction of a physics material bound to "
+                         "the 4 Robotiq finger colliders. The imported USD defines "
+                         "NO physics material at all, so the pads fall back to the "
+                         "PhysX default: the upstream Robotiq URDF does ask for "
+                         "grippy pads, but via a Gazebo-only "
+                         "<surface><friction><ode><mu1>100000</mu1> tag that the "
+                         "Isaac importer drops. Without this a 1 kg object slips "
+                         "out of the pads (measured 238 mm of slip vs 0.05 mm). "
+                         "0.0 leaves the colliders unbound (PhysX default).")
+parser.add_argument("--solver-position-iterations", type=int, default=64,
+                    help="PhysX articulation solver position-iteration count. "
+                         "NVIDIA's official 2F-85 asset uses 64, and 64 is also "
+                         "where grasping starts working here: at 32 the object is "
+                         "dropped during the lift, and 128 is measurably WORSE "
+                         "than 64. (importer default ~4)")
 parser.add_argument("--solver-velocity-iterations", type=int, default=4,
                     help="PhysX articulation solver velocity-iteration count.")
 parser.add_argument("--max-depenetration-velocity", type=float, default=0.0,
@@ -310,10 +371,16 @@ carb.log_warn(f"[mir_isaac_sim] articulation root: {robot_prim_path}")
 #     self-collisions turns off collision *between links of the same
 #     articulation* only — external objects are separate bodies, so grasping
 #     still works — and MoveIt still does its own SRDF self-collision checks.
-#   * solver iteration counts: the Robotiq finger linkage is over-constrained by
-#     the hard PhysX mimic joints (knuckle/inner_knuckle/finger_tip all geared to
-#     the master); the importer's default ~4 position iterations can't converge
-#     them each step, so they jitter. More iterations settle the coupling.
+#     (NVIDIA's official 2F-85 asset also ships with enabledSelfCollisions = 0.)
+#     Note: setting this attribute True on this articulation CRASHES omni.physx,
+#     and changing it after play() re-parses the physics scene and crashes too.
+#   * solver iteration counts: the mimic constraints need several position
+#     iterations to converge each step. NOTE: the linkage is NOT over-constrained
+#     (an older comment here claimed it was) — in the URDF the gripper is a pure
+#     TREE: base -> {left,right}_knuckle -> finger -> finger_tip, plus two
+#     independent inner_knuckle branches. The 5 mimic constraints act on 5
+#     separate followers and never overlap, so nothing is redundant. 64 matches
+#     NVIDIA's official asset; 32 loses the object during a lift and 128 is worse.
 _root_prim = stage_handle.GetPrimAtPath(robot_prim_path)
 if _root_prim and _root_prim.IsValid():
     _art_api = PhysxSchema.PhysxArticulationAPI.Apply(_root_prim)
@@ -420,6 +487,96 @@ def set_joint_armature(match, armature):
 
 
 set_joint_armature("robotiq_85_", args.gripper_armature)
+
+
+# ------------------------------ de-instance the robot subtree ---------------
+# The robot's links are INSTANCEABLE, so stage.Traverse() does not descend into
+# the instance prototypes and the collision meshes are invisible/uneditable.
+# Both the pad-friction binding below and unblock_lidar_self_collision() need
+# them reachable, so do it once, up front, for everyone.
+def deinstance_robot():
+    n = 0
+    for prim in stage_handle.Traverse():
+        if prim.GetPath().pathString.startswith(ROBOT_PRIM_PATH) and prim.IsInstance():
+            prim.SetInstanceable(False)
+            n += 1
+    if n:
+        carb.log_warn(f"[mir_isaac_sim] de-instanced {n} robot prim(s)")
+    return n
+
+
+deinstance_robot()
+
+
+# ------------------------------ Robotiq mimic joints ------------------------
+# The URDF importer authors every PhysX mimic joint as a COMPLIANT spring
+# (physxMimicJoint:<axis>:naturalFrequency = 25, dampingRatio = 0.005). That is
+# exact in free space but stretches badly the moment the fingers load up against
+# an object: measured up to 0.85 rad (49 deg) of follower error while gripping,
+# versus <= 1.1e-4 rad with a hard mimic. NVIDIA's official 2F-85 asset sets both
+# to 0 (= non-compliant), and their docs say to start there and only add
+# compliance if hard constraints are seen fighting each other.
+def set_mimic_compliance(natural_frequency, damping_ratio):
+    """Set the mimic spring on every Robotiq follower joint. 0/0 = hard."""
+    n = 0
+    for prim in stage_handle.Traverse():
+        if not prim.GetPath().pathString.startswith(ROBOT_PRIM_PATH):
+            continue
+        if "robotiq_85_" not in prim.GetName():
+            continue
+        for attr in prim.GetAttributes():
+            name = attr.GetName()
+            if not name.startswith("physxMimicJoint:"):
+                continue
+            if name.endswith(":naturalFrequency"):
+                attr.Set(float(natural_frequency))
+                n += 1
+            elif name.endswith(":dampingRatio"):
+                attr.Set(float(damping_ratio))
+    carb.log_warn(f"[mir_isaac_sim] mimic compliance nf={natural_frequency} "
+                  f"zeta={damping_ratio} -> {n} follower joint(s)"
+                  + (" (NON-COMPLIANT / hard)" if natural_frequency == 0.0
+                     and damping_ratio == 0.0 else ""))
+
+
+set_mimic_compliance(args.mimic_natural_frequency, args.mimic_damping_ratio)
+
+
+# ------------------------------ finger-pad friction -------------------------
+# The imported USD defines NO physics material, so every collider — including
+# the finger pads — falls back to the PhysX default. The upstream Robotiq URDF
+# does ask for grippy pads, but through a Gazebo-only
+# <collision><surface><friction><ode><mu1>100000</mu1> block that the Isaac
+# importer ignores. Bind a real material so a grasp is carried by friction
+# instead of by squeezing hard enough to penetrate: without it a 1 kg object
+# slides 238 mm out of the pads, with it 0.05 mm.
+def bind_pad_friction(friction):
+    if friction <= 0.0:
+        carb.log_warn("[mir_isaac_sim] pad friction disabled (PhysX default)")
+        return
+    mat_path = "/World/PhysicsMaterials/robotiq_pad"
+    UsdShade.Material.Define(stage_handle, mat_path)
+    mat_prim = stage_handle.GetPrimAtPath(mat_path)
+    mat_api = UsdPhysics.MaterialAPI.Apply(mat_prim)
+    mat_api.CreateStaticFrictionAttr().Set(float(friction))
+    mat_api.CreateDynamicFrictionAttr().Set(float(friction))
+    mat_api.CreateRestitutionAttr().Set(0.0)
+    material = UsdShade.Material(mat_prim)
+    n = 0
+    # instance proxies: needs the de-instancing above, and a stage-wide range
+    for prim in Usd.PrimRange.Stage(stage_handle, Usd.TraverseInstanceProxies()):
+        path = prim.GetPath().pathString
+        if not path.startswith(ROBOT_PRIM_PATH) or "finger" not in path:
+            continue
+        if not prim.HasAPI(UsdPhysics.CollisionAPI):
+            continue
+        UsdShade.MaterialBindingAPI(prim).Bind(
+            material, UsdShade.Tokens.weakerThanDescendants, "physics")
+        n += 1
+    carb.log_warn(f"[mir_isaac_sim] pad friction {friction} -> {n} finger collider(s)")
+
+
+bind_pad_friction(args.pad_friction)
 
 
 # ------------------------------ make the drive wheels velocity-controlled --
@@ -607,7 +764,7 @@ set_joint_armature(set(UR_HOME.keys()), args.arm_armature)
 # the Robotiq master joint (the 5 mimic joints follow it via PhysX coupling)
 set_position_drive(["robotiq_85_left_knuckle_joint"],
                    stiffness=args.gripper_stiffness, damping=args.gripper_damping,
-                   max_force=1.0e3)
+                   max_force=args.gripper_max_force)
 simulation_app.update()
 
 # ------------------------------------------------ build the ROS2 action graph
@@ -776,16 +933,10 @@ def unblock_lidar_self_collision(laser_links):
     origins stay on the URDF laser_links, so /f_scan + /b_scan reproject with
     ZERO offset error (unlike nudging the sensors outward).
     """
-    # The robot's links are INSTANCEABLE; stage.Traverse() does not descend into
-    # instance prototypes, so the collision meshes are hidden and uneditable.
-    # De-instance the robot subtree first so the geometry colliders become
-    # reachable and we can author collisionEnabled overrides on them.
-    deinst = 0
-    for p in stage_handle.Traverse():
-        if p.GetPath().pathString.startswith(ROBOT_PRIM_PATH) and p.IsInstance():
-            p.SetInstanceable(False)
-            deinst += 1
-    print(f"[mir_isaac_sim] self-collision unblock: de-instanced {deinst} robot prim(s)")
+    # The collision meshes must be reachable to author collisionEnabled on them;
+    # deinstance_robot() already ran at startup (the pad-friction binding needs
+    # it too), so this is a no-op unless something re-instanced the subtree.
+    deinstance_robot()
 
     # Laser plane height (both SICK at z≈0.19); a collider only blocks the
     # horizontal beams if its world bbox spans this z.
