@@ -1,5 +1,11 @@
 <?xml version='1.0' encoding='utf-8'?>
 <robot name="mir_100">
+  <material name="aluminum">
+    <color rgba="0.5 0.5 0.5 1" />
+  </material>
+  <material name="plastic">
+    <color rgba="0.1 0.1 0.1 1" />
+  </material>
   <link name="base_footprint" />
   <joint name="base_joint" type="fixed">
     <parent link="base_footprint" />
@@ -692,6 +698,144 @@
     <child link="ur_tool0" />
   </joint>
 
+  <link name="d435i_mount_frame" />
+  <joint name="d435i_mount_frame_joint" type="fixed">
+    <parent link="robotiq_wrist_camera_tool_link" />
+    <child link="d435i_mount_frame" />
+    <origin rpy="-1.5707963267948966 -1.5707963267948966 0" xyz="0 0 0" />
+  </joint>
+  <link name="camera_mount">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="/mnt/data/mir_isaac/install/mir_description/share/mir_description/meshes/visual/D435i_mounted.STL" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="light_grey">
+        <color rgba="0.6 0.6 0.6 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="/mnt/data/mir_isaac/install/mir_description/share/mir_description/meshes/collision/D435i_mounted.STL" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="camera_mount_joint" type="fixed">
+    <parent link="d435i_mount_frame" />
+    <child link="camera_mount" />
+    <origin rpy="0 3.141592653589793 1.5707963267948966" xyz="0.035 0.05 0.03" />
+  </joint>
+
+  <joint name="realsense_joint" type="fixed">
+    <origin rpy="3.141592653589793 0 0" xyz="0.02 0 -0.061" />
+    <parent link="d435i_mount_frame" />
+    <child link="realsense_bottom_screw_frame" />
+  </joint>
+  <link name="realsense_bottom_screw_frame" />
+  <joint name="realsense_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.010600000000000002 0.0175 0.0125" />
+    <parent link="realsense_bottom_screw_frame" />
+    <child link="realsense_link" />
+  </joint>
+  <link name="realsense_link">
+    <visual>
+
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0043 -0.0175 0" />
+      <geometry>
+        <mesh filename="/mnt/data/mir_isaac/install/realsense2_description/share/realsense2_description/meshes/d435.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 -0.0175 0" />
+      <geometry>
+        <box size="0.02505 0.09 0.025" />
+      </geometry>
+    </collision>
+    <inertial>
+
+      <mass value="0.072" />
+
+      <origin xyz="0 0 0" />
+      <inertia ixx="0.000003881243" ixy="0.0" ixz="0.0" iyy="0.000498940" iyz="0.0" izz="0.000003879257" />
+    </inertial>
+  </link>
+
+  <joint name="realsense_depth_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0" />
+    <parent link="realsense_link" />
+    <child link="realsense_depth_frame" />
+  </joint>
+  <link name="realsense_depth_frame" />
+  <joint name="realsense_depth_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="realsense_depth_frame" />
+    <child link="realsense_depth_optical_frame" />
+  </joint>
+  <link name="realsense_depth_optical_frame" />
+
+  <joint name="realsense_infra1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0" />
+    <parent link="realsense_link" />
+    <child link="realsense_infra1_frame" />
+  </joint>
+  <link name="realsense_infra1_frame" />
+  <joint name="realsense_infra1_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="realsense_infra1_frame" />
+    <child link="realsense_infra1_optical_frame" />
+  </joint>
+  <link name="realsense_infra1_optical_frame" />
+
+  <joint name="realsense_infra2_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.05 0" />
+    <parent link="realsense_link" />
+    <child link="realsense_infra2_frame" />
+  </joint>
+  <link name="realsense_infra2_frame" />
+  <joint name="realsense_infra2_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="realsense_infra2_frame" />
+    <child link="realsense_infra2_optical_frame" />
+  </joint>
+  <link name="realsense_infra2_optical_frame" />
+
+  <joint name="realsense_color_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.015 0" />
+    <parent link="realsense_link" />
+    <child link="realsense_color_frame" />
+  </joint>
+  <link name="realsense_color_frame" />
+  <joint name="realsense_color_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="realsense_color_frame" />
+    <child link="realsense_color_optical_frame" />
+  </joint>
+  <link name="realsense_color_optical_frame" />
+  <link name="realsense_accel_frame" />
+  <link name="realsense_accel_optical_frame" />
+  <link name="realsense_gyro_frame" />
+  <link name="realsense_gyro_optical_frame" />
+  <joint name="realsense_accel_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.01174 -0.00552 0.0051" />
+    <parent link="realsense_link" />
+    <child link="realsense_accel_frame" />
+  </joint>
+  <joint name="realsense_accel_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="realsense_accel_frame" />
+    <child link="realsense_accel_optical_frame" />
+  </joint>
+  <joint name="realsense_gyro_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.01174 -0.00552 0.0051" />
+    <parent link="realsense_link" />
+    <child link="realsense_gyro_frame" />
+  </joint>
+  <joint name="realsense_gyro_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="realsense_gyro_frame" />
+    <child link="realsense_gyro_optical_frame" />
+  </joint>
   <link name="robotiq_ft300_mounting_plate">
 
     <inertial>

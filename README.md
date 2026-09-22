@@ -1,14 +1,15 @@
-# MiR100 + UR5 + FT 300 + Wrist Camera + Robotiq85
+# MiR100 + UR5 + FT 300 + Wrist Camera + D435i + Robotiq85
 
-![Current USD: MiR100 + UR5 + black FT 300, Wrist Camera and Robotiq85](Isaac_Sim_Mir_Ur5.png)
+![Current USD: MiR100 + UR5 + black FT 300, Wrist Camera, D435i and Robotiq85](Isaac_Sim_Mir_Ur5.png)
 
 This workspace integrates the MiR100 mobile base, the UR5 arm, and the wrist
-assembly **FT 300 → Robotiq Wrist Camera → Robotiq 85 gripper**, replacing the
-former RealSense D435i assembly. It supports Isaac Sim, Gazebo Classic and the
+assembly **FT 300 → Robotiq Wrist Camera → Robotiq 85 gripper**, with the
+RealSense D435i retained on a relocated bracket beside the gripper. It supports
+Isaac Sim, Gazebo Classic and the
 real robot. Isaac and Gazebo share the same ROS 2 Control, Nav2 and MoveIt2
 configuration.
 
-![Current USD wrist detail: black FT 300, Wrist Camera and 2F-85 gripper](isaac_sim/mir_wrist_render.png)
+![Current USD wrist detail: FT 300, Wrist Camera, D435i and 2F-85 gripper](isaac_sim/mir_wrist_render.png)
 
 These previews are rendered from `isaac_sim/usd/mir_isaac.usd`. Regenerate them
 with `$ISAAC_PYTHON isaac_sim/render_check.py` after updating the USD. Wrist

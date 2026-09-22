@@ -1,7 +1,8 @@
 # MiR100 + UR5 + Robotiq85 — Isaac Sim back-end (replaces Gazebo)
 
 The default wrist assembly is now **UR5 → FT 300 → Robotiq Wrist Camera →
-2F-85**, replacing the D435i and its interfering bracket. The gripper mounting frame is 55 mm
+2F-85**, with the D435i and its original bracket retained at the gripper-side
+mounting face. The gripper mounting frame is 55 mm
 farther along tool Z. These additions are mechanical models/TF frames;
 Robotiq camera images and FT wrench publishing are not implemented. CAD
 sources, dimensions and assumptions are documented in
@@ -9,7 +10,7 @@ sources, dimensions and assumptions are documented in
 
 ![Current combined robot USD](mir_isaac_render.png)
 
-![Black FT 300 and Wrist Camera with the 2F-85 gripper](mir_wrist_render.png)
+![Black FT 300 and Wrist Camera with the D435i and 2F-85 gripper](mir_wrist_render.png)
 
 Regenerate the README, robot, wrist and maze preview images with
 `python isaac_sim/render_check.py` using the Isaac Lab Python environment.

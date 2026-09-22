@@ -8,9 +8,20 @@ The FT 300 output face is 41.5 mm from `ur_tool0`. The camera adds
 13.5 mm when used directly with a Robotiq gripper (no camera tool plate).
 `robotiq_wrist_camera_tool_link` and `robotiq_85_base_link` are therefore
 55 mm along `ur_tool0` +Z, with the same orientation. `ur_tool0` itself
-remains the UR flange/tool reference, not the gripper TCP. The previous
-RealSense D435i and its bracket are replaced by this assembly: the old bracket
-intersects both the FT 300 coupling and sensor in MoveIt collision checks.
+remains the UR flange/tool reference, not the gripper TCP. The RealSense
+D435i and its original bracket are also present. `d435i_mount_frame` attaches
+beside the gripper at `robotiq_wrist_camera_tool_link`, preserving the original
+camera/bracket geometry and its transform relative to the gripper. Relative
+to the old flange mounting, both move 55 mm along tool +Z. The inverse
+flange-to-tool rotation in this frame preserves the original optical axes.
+
+The old bracket position intersected the FT 300; the new position seats the
+bracket on the Wrist Camera output face. Collision checking against the actual
+camera CAD mesh reports only about 2.3 micrometres at this mating plane, so that
+fixed contact is marked Adjacent in the SRDF. Checks against FT 300, the moving
+fingers, the rest of the arm and the chassis remain enabled for the D435i.
+This describes a simulation mounting arrangement; verify mounting hardware
+and camera extrinsics against the physical robot before using them on hardware.
 
 FT 300 is the assumed sensor variant; this is not an FT 300-S model.
 Verify that variant and the physical cable orientation against the actual robot.
@@ -47,6 +58,8 @@ measurement of the physical robot. The total varies as the fingers move.
 Reproduce after geometry edits with `python3 isaac_sim/measure_wrist_stack.py`
 from the repository (requires numpy and trimesh).
 
+The restored D435i/bracket were checked at 17 gripper openings across three
+arm poses (51 configurations), allowing only the intended mounting contacts.
 MoveIt was validated on the simulated combined robot: collision-aware FK/IK
 at `robotiq_85_base_link`, OMPL planning, and trajectory execution for a small
 shoulder-pan movement and return to the initial pose all succeeded. The live
@@ -99,8 +112,9 @@ The SRDF excludes mating rigid surfaces while retaining checks against other
 robot links.
 
 No Robotiq camera image publisher, FT wrench publisher or physical hardware
-driver is added. The Isaac `--camera` option still targets the former D435i
-model and will warn and skip it when that link is absent; it does not enable
-the Robotiq camera. Rebuild
+driver is added. The Isaac `--camera` option targets the restored D435i model
+and its existing `/realsense/...` publishers; it does not enable the Robotiq
+camera. D435i link/topic names and internal optical transforms are retained.
+Rebuild
 `mir_description` and `ur_moveit_config` and regenerate the Isaac snapshot after
 editing the stack; see `isaac_sim/README_isaac.md` in the repository root.
