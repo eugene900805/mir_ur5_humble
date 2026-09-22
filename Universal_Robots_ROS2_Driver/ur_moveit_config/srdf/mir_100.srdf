@@ -13,6 +13,12 @@
         <chain base_link="ur_base_link" tip_link="ur_tool0"/>
     </group>
     <group name="gripper">
+        <link name="robotiq_ft300_mounting_plate"/>
+        <link name="robotiq_ft300_sensor"/>
+        <link name="robotiq_ft_frame"/>
+        <link name="robotiq_wrist_camera_link"/>
+        <link name="robotiq_wrist_camera_optical_frame"/>
+        <link name="robotiq_wrist_camera_tool_link"/>
         <link name="robotiq_85_base_link"/>
         <link name="robotiq_85_left_inner_knuckle_link"/>
         <link name="robotiq_85_left_knuckle_link"/>
@@ -40,20 +46,24 @@
     <passive_joint name="robotiq_85_right_knuckle_joint"/>
     <passive_joint name="robotiq_85_right_finger_tip_joint"/>
     <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
+    <!-- Only mating rigid surfaces; retain collision checks against the arm,
+         chassis and moving fingers for the longer tool assembly. -->
+    <disable_collisions link1="ur_wrist_3_link" link2="robotiq_ft300_mounting_plate" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_ft300_mounting_plate" link2="robotiq_ft300_sensor" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_ft300_sensor" link2="robotiq_wrist_camera_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_wrist_camera_link" link2="robotiq_85_base_link" reason="Adjacent"/>
     <disable_collisions link1="back_laser_link" link2="base_link" reason="Adjacent"/>
     <disable_collisions link1="back_laser_link" link2="bl_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="bl_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="br_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="br_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="cabinet_link" reason="Never"/>
-    <disable_collisions link1="back_laser_link" link2="camera_mount" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="fl_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="fl_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="fr_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="fr_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="front_laser_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="left_wheel_link" reason="Never"/>
-    <disable_collisions link1="back_laser_link" link2="realsense_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="right_wheel_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="robotiq_85_base_link" reason="Never"/>
     <disable_collisions link1="back_laser_link" link2="robotiq_85_left_finger_link" reason="Never"/>
@@ -86,14 +96,12 @@
     <disable_collisions link1="bl_caster_rotation_link" link2="br_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="bl_caster_rotation_link" link2="br_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="bl_caster_rotation_link" link2="cabinet_link" reason="Never"/>
-    <disable_collisions link1="bl_caster_rotation_link" link2="camera_mount" reason="Never"/>
     <disable_collisions link1="bl_caster_rotation_link" link2="fl_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="bl_caster_rotation_link" link2="fl_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="bl_caster_rotation_link" link2="fr_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="bl_caster_rotation_link" link2="fr_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="bl_caster_rotation_link" link2="front_laser_link" reason="Never"/>
     <disable_collisions link1="bl_caster_rotation_link" link2="left_wheel_link" reason="Never"/>
-    <disable_collisions link1="bl_caster_rotation_link" link2="realsense_link" reason="Never"/>
     <disable_collisions link1="bl_caster_rotation_link" link2="right_wheel_link" reason="Never"/>
     <disable_collisions link1="bl_caster_rotation_link" link2="robotiq_85_base_link" reason="Never"/>
     <disable_collisions link1="bl_caster_rotation_link" link2="robotiq_85_left_finger_link" reason="Never"/>
@@ -109,14 +117,12 @@
     <disable_collisions link1="bl_caster_wheel_link" link2="br_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="bl_caster_wheel_link" link2="br_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="bl_caster_wheel_link" link2="cabinet_link" reason="Never"/>
-    <disable_collisions link1="bl_caster_wheel_link" link2="camera_mount" reason="Never"/>
     <disable_collisions link1="bl_caster_wheel_link" link2="fl_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="bl_caster_wheel_link" link2="fl_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="bl_caster_wheel_link" link2="fr_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="bl_caster_wheel_link" link2="fr_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="bl_caster_wheel_link" link2="front_laser_link" reason="Never"/>
     <disable_collisions link1="bl_caster_wheel_link" link2="left_wheel_link" reason="Never"/>
-    <disable_collisions link1="bl_caster_wheel_link" link2="realsense_link" reason="Never"/>
     <disable_collisions link1="bl_caster_wheel_link" link2="right_wheel_link" reason="Never"/>
     <disable_collisions link1="bl_caster_wheel_link" link2="robotiq_85_base_link" reason="Never"/>
     <disable_collisions link1="bl_caster_wheel_link" link2="robotiq_85_left_knuckle_link" reason="Never"/>
@@ -130,14 +136,12 @@
     <disable_collisions link1="bl_caster_wheel_link" link2="ur_wrist_3_link" reason="Never"/>
     <disable_collisions link1="br_caster_rotation_link" link2="br_caster_wheel_link" reason="Adjacent"/>
     <disable_collisions link1="br_caster_rotation_link" link2="cabinet_link" reason="Never"/>
-    <disable_collisions link1="br_caster_rotation_link" link2="camera_mount" reason="Never"/>
     <disable_collisions link1="br_caster_rotation_link" link2="fl_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="br_caster_rotation_link" link2="fl_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="br_caster_rotation_link" link2="fr_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="br_caster_rotation_link" link2="fr_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="br_caster_rotation_link" link2="front_laser_link" reason="Never"/>
     <disable_collisions link1="br_caster_rotation_link" link2="left_wheel_link" reason="Never"/>
-    <disable_collisions link1="br_caster_rotation_link" link2="realsense_link" reason="Never"/>
     <disable_collisions link1="br_caster_rotation_link" link2="right_wheel_link" reason="Never"/>
     <disable_collisions link1="br_caster_rotation_link" link2="robotiq_85_base_link" reason="Never"/>
     <disable_collisions link1="br_caster_rotation_link" link2="robotiq_85_left_finger_link" reason="Never"/>
@@ -156,14 +160,12 @@
     <disable_collisions link1="br_caster_rotation_link" link2="ur_wrist_2_link" reason="Never"/>
     <disable_collisions link1="br_caster_rotation_link" link2="ur_wrist_3_link" reason="Never"/>
     <disable_collisions link1="br_caster_wheel_link" link2="cabinet_link" reason="Never"/>
-    <disable_collisions link1="br_caster_wheel_link" link2="camera_mount" reason="Never"/>
     <disable_collisions link1="br_caster_wheel_link" link2="fl_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="br_caster_wheel_link" link2="fl_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="br_caster_wheel_link" link2="fr_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="br_caster_wheel_link" link2="fr_caster_wheel_link" reason="Never"/>
     <disable_collisions link1="br_caster_wheel_link" link2="front_laser_link" reason="Never"/>
     <disable_collisions link1="br_caster_wheel_link" link2="left_wheel_link" reason="Never"/>
-    <disable_collisions link1="br_caster_wheel_link" link2="realsense_link" reason="Never"/>
     <disable_collisions link1="br_caster_wheel_link" link2="right_wheel_link" reason="Never"/>
     <disable_collisions link1="br_caster_wheel_link" link2="robotiq_85_base_link" reason="Never"/>
     <disable_collisions link1="br_caster_wheel_link" link2="robotiq_85_left_finger_link" reason="Never"/>
@@ -190,20 +192,6 @@
     <disable_collisions link1="cabinet_link" link2="right_wheel_link" reason="Never"/>
     <disable_collisions link1="cabinet_link" link2="ur_base_link_inertia" reason="Adjacent"/>
     <disable_collisions link1="cabinet_link" link2="ur_shoulder_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="realsense_link" reason="Adjacent"/>
-    <disable_collisions link1="camera_mount" link2="right_wheel_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="robotiq_85_base_link" reason="Adjacent"/>
-    <disable_collisions link1="camera_mount" link2="robotiq_85_left_finger_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="robotiq_85_left_finger_tip_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="robotiq_85_left_inner_knuckle_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="robotiq_85_left_knuckle_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="robotiq_85_right_finger_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="robotiq_85_right_finger_tip_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="robotiq_85_right_inner_knuckle_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="robotiq_85_right_knuckle_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="ur_wrist_1_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="ur_wrist_2_link" reason="Never"/>
-    <disable_collisions link1="camera_mount" link2="ur_wrist_3_link" reason="Adjacent"/>
     <disable_collisions link1="fl_caster_rotation_link" link2="fl_caster_wheel_link" reason="Adjacent"/>
     <disable_collisions link1="fl_caster_rotation_link" link2="fr_caster_rotation_link" reason="Never"/>
     <disable_collisions link1="fl_caster_rotation_link" link2="fr_caster_wheel_link" reason="Never"/>
@@ -243,19 +231,6 @@
     <disable_collisions link1="left_wheel_link" link2="ur_base_link_inertia" reason="Never"/>
     <disable_collisions link1="left_wheel_link" link2="ur_shoulder_link" reason="Never"/>
     <disable_collisions link1="left_wheel_link" link2="ur_upper_arm_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="right_wheel_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="robotiq_85_base_link" reason="Adjacent"/>
-    <disable_collisions link1="realsense_link" link2="robotiq_85_left_finger_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="robotiq_85_left_finger_tip_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="robotiq_85_left_inner_knuckle_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="robotiq_85_left_knuckle_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="robotiq_85_right_finger_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="robotiq_85_right_finger_tip_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="robotiq_85_right_inner_knuckle_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="robotiq_85_right_knuckle_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="ur_wrist_1_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="ur_wrist_2_link" reason="Never"/>
-    <disable_collisions link1="realsense_link" link2="ur_wrist_3_link" reason="Adjacent"/>
     <disable_collisions link1="right_wheel_link" link2="robotiq_85_base_link" reason="Never"/>
     <disable_collisions link1="right_wheel_link" link2="robotiq_85_left_inner_knuckle_link" reason="Never"/>
     <disable_collisions link1="right_wheel_link" link2="robotiq_85_left_knuckle_link" reason="Never"/>

@@ -38,6 +38,9 @@ cfg = UrdfConverterCfg(
 )
 
 conv = UrdfConverter(cfg)
+from apply_wrist_materials import apply_wrist_materials  # noqa: E402
+
+apply_wrist_materials(URDF, conv.usd_path)
 print("Generated USD:", conv.usd_path)
 
 simulation_app.close()

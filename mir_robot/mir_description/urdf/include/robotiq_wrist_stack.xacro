@@ -1,0 +1,90 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- UR tool0 -> FT300 (with UR coupling) -> Wrist Camera -> 2F-85.
+       Mesh provenance, coordinate conversion and limitations: meshes/robotiq_wrist/README.md.
+       These are mechanical models; sensor data publishers are not provided. -->
+  <xacro:macro name="robotiq_wrist_stack" params="parent prefix:=robotiq_ rgba:='0.025 0.025 0.025 1'">
+    <link name="${prefix}ft300_mounting_plate">
+      <!-- Coupling inertia approximated as a 30 g, 75 mm diameter disk. -->
+      <inertial>
+        <origin xyz="0 0 0.0065"/>
+        <mass value="0.030"/>
+        <inertia ixx="0.00001097" ixy="0" ixz="0" iyy="0.00001097" iyz="0" izz="0.00002109"/>
+      </inertial>
+      <visual>
+        <geometry><mesh filename="package://mir_description/meshes/robotiq_wrist/robotiq_ft300_mounting_plate.stl"/></geometry>
+        <material name="ft300_mount_black"><color rgba="${rgba}"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.0065"/>
+        <geometry><cylinder radius="0.0375" length="0.013"/></geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}ft300_mount_joint" type="fixed">
+      <parent link="${parent}"/><child link="${prefix}ft300_mounting_plate"/>
+    </joint>
+    <link name="${prefix}ft300_sensor">
+      <!-- Sensor frame is at its output face; +Z points toward the tool.
+           Upstream mesh is reversed about Y, as in the ROS-Industrial macro. -->
+      <inertial>
+        <origin xyz="0 0 -0.017"/>
+        <mass value="0.300"/>
+        <inertia ixx="0.000262" ixy="0" ixz="0.000001" iyy="0.000265" iyz="-0.000001" izz="0.000219"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 ${pi} 0"/>
+        <geometry><mesh filename="package://mir_description/meshes/robotiq_wrist/robotiq_ft300.stl"/></geometry>
+        <material name="ft300_black"><color rgba="${rgba}"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 -0.0174"/>
+        <geometry><cylinder radius="0.0375" length="0.0348"/></geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}ft300_sensor_joint" type="fixed">
+      <origin xyz="0 0 0.0415"/>
+      <parent link="${prefix}ft300_mounting_plate"/><child link="${prefix}ft300_sensor"/>
+    </joint>
+    <link name="${prefix}ft_frame"/>
+    <joint name="${prefix}ft_frame_joint" type="fixed">
+      <origin rpy="0 0 ${pi/2}"/>
+      <parent link="${prefix}ft300_sensor"/><child link="${prefix}ft_frame"/>
+    </joint>
+    <link name="${prefix}wrist_camera_link">
+      <!-- Nominal 160 g camera, without the optional tool plate.
+           Inertia is a conservative box approximation, not calibrated CAD inertia. -->
+      <inertial>
+        <origin xyz="0 0.00625 0.0052"/>
+        <mass value="0.160"/>
+        <inertia ixx="0.00010878" ixy="0" ixz="0" iyy="0.00008169" iyz="0" izz="0.00017708"/>
+      </inertial>
+      <visual>
+        <geometry><mesh filename="package://mir_description/meshes/robotiq_wrist/robotiq_wrist_camera.stl"/></geometry>
+        <material name="wrist_camera_black"><color rgba="${rgba}"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.00675"/>
+        <geometry><cylinder radius="0.0375" length="0.0135"/></geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 0.04 0.0052"/>
+        <geometry><box size="0.045 0.020 0.0224"/></geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}wrist_camera_joint" type="fixed">
+      <parent link="${prefix}ft300_sensor"/><child link="${prefix}wrist_camera_link"/>
+    </joint>
+    <!-- Nominal optical frame: +Z looks toward the grasp, tilted 30 degrees
+         from the tool axis toward -Y. Real camera extrinsics need calibration. -->
+    <link name="${prefix}wrist_camera_optical_frame"/>
+    <joint name="${prefix}wrist_camera_optical_joint" type="fixed">
+      <origin xyz="0 0.0357 0.0001" rpy="${pi/6} 0 0"/>
+      <parent link="${prefix}wrist_camera_link"/><child link="${prefix}wrist_camera_optical_frame"/>
+    </joint>
+    <link name="${prefix}wrist_camera_tool_link"/>
+    <joint name="${prefix}wrist_camera_tool_joint" type="fixed">
+      <origin xyz="0 0 0.0135"/>
+      <parent link="${prefix}wrist_camera_link"/><child link="${prefix}wrist_camera_tool_link"/>
+    </joint>
+  </xacro:macro>
+</robot>

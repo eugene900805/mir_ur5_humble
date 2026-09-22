@@ -6,7 +6,6 @@
   <xacro:include filename="$(find mir_description)/urdf/include/sick_s300.urdf.xacro" />
   <xacro:include filename="$(find mir_description)/urdf/include/wheel.urdf.xacro" />
   <xacro:include filename="$(find mir_description)/urdf/include/caster.urdf.xacro" />
-  <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
 
   <xacro:property name="deg_to_rad" value="0.017453293" />
 
@@ -357,45 +356,18 @@
       </gazebo>
     </xacro:if>
 
-    <link name="${prefix}camera_mount">
-      <visual>
-        <origin xyz="0 0 0" rpy="0 0 0" />
-        <geometry>
-          <mesh filename="package://mir_description/meshes/visual/D435i_mounted.STL" scale="0.001 0.001 0.001" />
-        </geometry>
-        <xacro:insert_block name="material_light_grey" />
-      </visual>
-      <collision>
-        <origin xyz="0 0 0" rpy="0 0 0" />
-        <geometry>
-          <mesh filename="package://mir_description/meshes/collision/D435i_mounted.STL" scale="0.001 0.001 0.001" />
-        </geometry>
-      </collision>
-    </link>    
-
-    <joint name="${prefix}camera_mount_joint" type="fixed">
-      <parent link="ur_flange" />
-      <child link="${prefix}camera_mount" />
-      <origin xyz="0.035 0.05 0.03" rpy="0 ${pi} ${0.5 * pi}" />
-    </joint> 
-
-    <!-- realsense_gazebo_plugin is off by default: it throws during Load and
-         regularly segfaults gzserver right afterwards, while never actually
-         publishing colour or depth. Pass realsense_gazebo_plugin:=true if you
-         have a working build of it. -->
-    <xacro:arg name="realsense_gazebo_plugin" default="false" />
-    <xacro:sensor_d435i parent="ur_flange" name="realsense" use_nominal_extrinsics="true"
-                        add_gazebo_plugin="$(arg realsense_gazebo_plugin)">
-      <origin xyz="0.02 0 -0.061" rpy="${pi} 0 0"/>
-    </xacro:sensor_d435i>
+    <!-- The former flange-mounted D435i bracket intersects the FT300.
+         The Robotiq Wrist Camera below replaces that wrist camera assembly. -->
 
     <xacro:arg name="use_fake_hardware" default="true" />
   <xacro:arg name="com_port" default="/dev/ttyUSB0" />
 
   <!-- Import gripper macros -->
+  <xacro:include filename="$(find mir_description)/urdf/include/robotiq_wrist_stack.xacro" />
+  <xacro:robotiq_wrist_stack parent="ur_tool0" />
   <xacro:include filename="$(find mir_description)/urdf/include/robotiq_gripper_macro.xacro" />
 
-  <xacro:robotiq_gripper name="RobotiqGripperHardwareInterface" prefix="" parent="ur_tool0" use_fake_hardware="$(arg use_fake_hardware)" com_port="$(arg com_port)" sim_gazebo="$(arg sim_gazebo)" sim_isaac="$(arg sim_isaac)" isaac_joint_commands="/isaac_gripper_commands" isaac_joint_states="$(arg isaac_joint_states)">
+  <xacro:robotiq_gripper name="RobotiqGripperHardwareInterface" prefix="" parent="robotiq_wrist_camera_tool_link" use_fake_hardware="$(arg use_fake_hardware)" com_port="$(arg com_port)" sim_gazebo="$(arg sim_gazebo)" sim_isaac="$(arg sim_isaac)" isaac_joint_commands="/isaac_gripper_commands" isaac_joint_states="$(arg isaac_joint_states)">
     <origin xyz="0 0 0" rpy="0 0 0" />
   </xacro:robotiq_gripper>
 

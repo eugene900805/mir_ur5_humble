@@ -1,5 +1,21 @@
 # MiR100 + UR5 + Robotiq85 — Isaac Sim back-end (replaces Gazebo)
 
+The default wrist assembly is now **UR5 → FT 300 → Robotiq Wrist Camera →
+2F-85**, replacing the D435i and its interfering bracket. The gripper mounting frame is 55 mm
+farther along tool Z. These additions are mechanical models/TF frames;
+Robotiq camera images and FT wrench publishing are not implemented. CAD
+sources, dimensions and assumptions are documented in
+[the wrist model notes](../mir_robot/mir_description/meshes/robotiq_wrist/README.md).
+
+![Current combined robot USD](mir_isaac_render.png)
+
+![Black FT 300 and Wrist Camera with the 2F-85 gripper](mir_wrist_render.png)
+
+Regenerate the README, robot, wrist and maze preview images with
+`python isaac_sim/render_check.py` using the Isaac Lab Python environment.
+The script poses a temporary stage for rendering; it does not change the USD
+or send commands to the running robot.
+
 This integrates **NVIDIA Isaac Sim 5.0** as the physics/rendering simulator for
 the `mir_ur5_humble` robot, in place of Gazebo Classic, while keeping the
 **ros2_control + MoveIt2** stack unchanged. Isaac Sim drives the robot
@@ -118,6 +134,7 @@ xacro $(ros2 pkg prefix mir_description)/share/mir_description/urdf/mir.urdf.xac
 python isaac_sim/make_isaac_urdf.py isaac_sim/mir_isaac_raw.urdf isaac_sim/mir_isaac.urdf
 # 3c. URDF → USD (Robotiq mimic joints preserved)
 python isaac_sim/convert_to_usd.py
+# This also applies the wrist colors from URDF (the STL importer defaults to white).
 # 3d. fix the importer's .dae visual orientation (Isaac Sim 5.0 bug)
 python isaac_sim/fix_dae_orientation.py isaac_sim/usd/configuration/mir_isaac_base.usd
 # 3e. repair the broken Robotiq left-chain mimic joint (inf limit / missing referenceJoint)

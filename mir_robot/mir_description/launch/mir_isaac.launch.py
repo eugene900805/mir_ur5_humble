@@ -1,4 +1,4 @@
-# MiR100 + UR5 + Robotiq85 + D435i — Isaac Sim back-end (replaces Gazebo).
+# MiR100 + UR5 + FT300 + Robotiq Wrist Camera + Robotiq85 — Isaac Sim back-end (replaces Gazebo).
 #
 # This launch file brings up the *ROS side* of the Isaac Sim integration:
 #   - robot_state_publisher (robot_description built with sim_isaac:=true)
@@ -170,7 +170,7 @@ def generate_launch_description():
     ur_description_share = FindPackageShare("ur_description")
 
     # ------------------------------------------------------ robot_description
-    # Full robot (MiR base + UR + Robotiq + D435i) with the Isaac hardware
+    # Full robot (MiR base + UR + FT300 + Wrist Camera + gripper) with Isaac hardware
     # interface selected. This exact description is shared by RSP, the
     # controller_manager and move_group so everything agrees on the model.
     robot_description_content = Command([
