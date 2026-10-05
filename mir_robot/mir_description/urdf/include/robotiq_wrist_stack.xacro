@@ -74,8 +74,11 @@
     <joint name="${prefix}wrist_camera_joint" type="fixed">
       <parent link="${prefix}ft300_sensor"/><child link="${prefix}wrist_camera_link"/>
     </joint>
-    <!-- Nominal optical frame: +Z looks toward the grasp, tilted 30 degrees
-         from the tool axis toward -Y. Real camera extrinsics need calibration. -->
+    <!-- Nominal optical frame, +Z looks toward the grasp, tilted 30 degrees
+         from the tool axis toward -Y. Real camera extrinsics need calibration.
+         Never put a colon followed by a space in URDF comments. With no
+         parameters file, gazebo_ros2_control passes the URDF as a YAML
+         parameter override, and that sequence makes it unparsable. -->
     <link name="${prefix}wrist_camera_optical_frame"/>
     <joint name="${prefix}wrist_camera_optical_joint" type="fixed">
       <origin xyz="0 0.0357 0.0001" rpy="${pi/6} 0 0"/>
